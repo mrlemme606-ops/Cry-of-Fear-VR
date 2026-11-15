@@ -114,6 +114,8 @@ static CVAR_DEFINE_AUTO( vr_in_lmuz_y, "0", 0, "(internal) left muzzle position"
 static CVAR_DEFINE_AUTO( vr_in_lmuz_z, "0", 0, "(internal) left muzzle position" );
 static CVAR_DEFINE_AUTO( vr_menu_version, "0", FCVAR_ARCHIVE, "(internal) settings of the VR menu that were set once" );
 static CVAR_DEFINE_AUTO( vr_move_keys, "1", FCVAR_ARCHIVE, "1 = the left stick also presses the walking keys (like the keyboard), 0 = only the analog walking command. Try 0 if walking in circles lags" );
+static CVAR_DEFINE_AUTO( vr_melee_assist, "1", FCVAR_ARCHIVE, "1 = a swing that goes towards a monster close by is aimed at it, so it hits (the way most VR games do it)" );
+static CVAR_DEFINE_AUTO( vr_melee_assist_range, "150", FCVAR_ARCHIVE, "how far from your head a monster can be for the swing assist, in units" );
 static CVAR_DEFINE_AUTO( vr_menu_debug, "0", 0, "1 = print every command the game sends (helps find the button of the game's own main menu that opens the options)" );
 static CVAR_DEFINE_AUTO( vr_snap_angle, "30", FCVAR_ARCHIVE, "snap turn angle in degrees" );
 static CVAR_DEFINE_AUTO( vr_smooth_speed, "120", FCVAR_ARCHIVE, "smooth turn speed in degrees per second" );
@@ -666,6 +668,8 @@ void IN_VRInit( void )
 	Cvar_RegisterVariable( &vr_turn_mode );
 	Cvar_RegisterVariable( &vr_move_ref );
 	Cvar_RegisterVariable( &vr_menu_debug );
+	Cvar_RegisterVariable( &vr_melee_assist );
+	Cvar_RegisterVariable( &vr_melee_assist_range );
 	Cvar_RegisterVariable( &vr_move_keys );
 	Cvar_RegisterVariable( &vr_in_wand_yaw );
 	Cvar_RegisterVariable( &vr_in_lmuz_x );
@@ -1443,6 +1447,66 @@ void IN_VRMenuFrame( void )
 	IN_VRMoveCursor();
 }
 
+// Melee that hits: the hand swings roughly at something, and the game's own attack looks along the view angles from the head.
+// So the swing is aimed at the monster the hand is moving towards: the best one within reach and inside a cone around the
+// direction of the swing. Rel is the swing yaw relative to the body, pitch the swing pitch (both as the swing gives them).
+static qboolean IN_VRMeleeAssist( float rel, float pitch, float *orel, float *opitch )
+{
+	cl_entity_t *player = CL_GetEntityByIndex( cl.playernum + 1 );
+	vec3_t eye, ang, dir, best_dir;
+	float best = 0.45f, range = vr_melee_assist_range.value;
+	int i;
+
+	if( !vr_melee_assist.value || !player )
+		return false;
+
+	VectorAdd( cl.simorg, cl.viewheight, eye );
+	VectorSet( ang, pitch, cl.viewangles[YAW] + rel, 0.0f );
+	AngleVectors( ang, dir, NULL, NULL );
+
+	for( i = 1; i < clgame.maxEntities; i++ )
+	{
+		cl_entity_t *ent = CL_GetEntityByIndex( i );
+		vec3_t center, to;
+		float len, c;
+
+		if( !ent || ent == player || !ent->model || ent->curstate.messagenum != cl.parsecount )
+			continue;
+
+		if( ent->curstate.movetype != MOVETYPE_STEP || ent->curstate.solid == SOLID_NOT || FBitSet( ent->curstate.effects, EF_NODRAW ))
+			continue;
+
+		VectorSet( center, ent->origin[0] + ( ent->curstate.mins[0] + ent->curstate.maxs[0] ) * 0.5f,
+			ent->origin[1] + ( ent->curstate.mins[1] + ent->curstate.maxs[1] ) * 0.5f,
+			ent->origin[2] + ( ent->curstate.mins[2] + ent->curstate.maxs[2] ) * 0.5f );
+		VectorSubtract( center, eye, to );
+		len = VectorLength( to );
+
+		if( len < 1.0f || len > range )
+			continue;
+
+		VectorScale( to, 1.0f / len, to );
+		c = DotProduct( dir, to );
+
+		if( c > best )
+		{
+			best = c;
+			VectorCopy( to, best_dir );
+		}
+	}
+
+	if( best <= 0.45f )
+		return false;
+
+	*opitch = -RAD2DEG( atan2( best_dir[2], sqrt( best_dir[0] * best_dir[0] + best_dir[1] * best_dir[1] )));
+	*orel = anglemod( RAD2DEG( atan2( best_dir[1], best_dir[0] )) - cl.viewangles[YAW] );
+
+	if( *orel > 180.0f )
+		*orel -= 360.0f;
+
+	return true;
+}
+
 void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 {
 	float yaw = 0.0f;
@@ -1660,6 +1724,8 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 		mode = 2;
 		aim_rel = vr_in_lswing_yaw.value;
 		aim_pitch = vr_in_lswing_pitch.value;
+
+		IN_VRMeleeAssist( aim_rel, aim_pitch, &aim_rel, &aim_pitch );
 	}
 	else if( host.realtime < vr_swing_until )
 	{
@@ -1667,6 +1733,8 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 		mode = 2;
 		aim_rel = vr_in_swing_yaw.value;
 		aim_pitch = vr_in_swing_pitch.value;
+
+		IN_VRMeleeAssist( aim_rel, aim_pitch, &aim_rel, &aim_pitch );
 	}
 	else if( vr_in_hand_valid.value > 0.5f && vr_use_aim.value >= 1.0f && host.realtime < vr_use_until && host.realtime >= vr_hand_aim_until )
 	{

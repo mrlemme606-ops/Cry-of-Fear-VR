@@ -2259,6 +2259,11 @@ static void R_StudioDrawPoints( void )
 	{
 		g_nFaceFlags = ptexture[pskinref[pmesh[j].skinref]].flags | g_nForceFaceFlags;
 
+		// Cry of Fear's glowing parts (the phone's screen, sights) are textures named ..._fullbright; its own renderer lights
+		// them fully, this one has to be told
+		if( Q_stristr( ptexture[pskinref[pmesh[j].skinref]].name, "fullbright" ))
+			SetBits( g_nFaceFlags, STUDIO_NF_FULLBRIGHT );
+
 		// fill in sortedmesh info
 		g_studio.meshes[j].flags = g_nFaceFlags;
 		g_studio.meshes[j].mesh = &pmesh[j];
@@ -2335,6 +2340,9 @@ static void R_StudioDrawPoints( void )
 		short *ptricmds = (short *)((byte *)m_pStudioHeader + pmesh->triindex);
 
 		g_nFaceFlags = ptexture[pskinref[pmesh->skinref]].flags | g_nForceFaceFlags;
+
+		if( Q_stristr( ptexture[pskinref[pmesh->skinref]].name, "fullbright" ))
+			SetBits( g_nFaceFlags, STUDIO_NF_FULLBRIGHT );
 
 		float s = 1.0f / (float)ptexture[pskinref[pmesh->skinref]].width;
 		float t = 1.0f / (float)ptexture[pskinref[pmesh->skinref]].height;

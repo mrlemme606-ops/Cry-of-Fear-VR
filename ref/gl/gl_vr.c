@@ -31,6 +31,12 @@ Design notes:
 #endif
 
 static void VR_UIProbe_f( void );
+
+static void VR_DualCutAdjust_f( void )
+{
+	if( gEngfuncs.Cmd_Argc() > 1 )
+		gEngfuncs.Cvar_SetValue( "vr_dual_cut", gEngfuncs.pfnGetCvarFloat( "vr_dual_cut" ) + Q_atof( gEngfuncs.Cmd_Argv( 1 )));
+}
 #include "xash3d_mathlib.h"
 #include <ctype.h>
 
@@ -242,7 +248,7 @@ static CVAR_DEFINE_AUTO( vr_muzzle_y, "0", FCVAR_ARCHIVE, "muzzle: sideways" );
 static CVAR_DEFINE_AUTO( vr_muzzle_z, "0", FCVAR_ARCHIVE, "muzzle: up" );
 static CVAR_DEFINE_AUTO( vr_dual_own, "1", FCVAR_ARCHIVE, "1 = hide the game's own picture of the left weapon in the dual wield (the one in front of your body) and show only the one on your hand" );
 static CVAR_DEFINE_AUTO( vr_dual_debug, "0", 0, "1 = print once a second whether the left weapon of a dual wield was placed at your hand" );
-static CVAR_DEFINE_AUTO( vr_dual_cut, "6", FCVAR_ARCHIVE, "where the arm of the left hand weapon is cut off, in units behind the hand (saved with vr_weapon_save_left)" );
+static CVAR_DEFINE_AUTO( vr_dual_cut, "5", FCVAR_ARCHIVE, "where the arm of the left hand weapon is cut off, in units behind the hand (saved with vr_weapon_save_left)" );
 static CVAR_DEFINE_AUTO( vr_dual_cut_pitch, "0", FCVAR_ARCHIVE, "tilt of the left weapon's arm cut: pitch degrees (saved with vr_weapon_save_left)" );
 static CVAR_DEFINE_AUTO( vr_dual_cut_yaw, "0", FCVAR_ARCHIVE, "tilt of the left weapon's arm cut: yaw degrees (saved with vr_weapon_save_left)" );
 static CVAR_DEFINE_AUTO( vr_cut_follow, "0", FCVAR_ARCHIVE, "1 = the cut of the arm follows the wrist of the weapon model through its animations (shotgun slide, reloading); 0 = fixed to the controller" );
@@ -576,6 +582,7 @@ void VR_InitCvars( void )
 	VR_UIInitCvars();
 	gEngfuncs.Cmd_AddCommand( "vr_vm_center", VR_Center_f, "put the middle of the weapon in your hand. vr_vm_center <size> also sizes it (size = length in units)" );
 	gEngfuncs.Cmd_AddCommand( "vr_vm_info", VR_VMInfo_f, "print what the game says about the weapon model in hand (scale, size, auto-fit) - for weapons that look wrong" );
+	gEngfuncs.Cmd_AddCommand( "vr_dual_cut_adjust", VR_DualCutAdjust_f, "change vr_dual_cut by a number (used when a left weapon is loaded)" );
 	gEngfuncs.Cmd_AddCommand( "vr_ui_probe", VR_UIProbe_f, "while the UI is black: print what the window holds and the GL state" );
 	gEngfuncs.Cmd_AddCommand( "vr_slots", VR_Slots_f, "print what the game says is in the three hotkey slots, and whether the logo file exists" );
 	gEngfuncs.Cmd_AddCommand( "vr_ents", VR_Ents_f, "list the things drawn in this scene (model, render fx, distance, size). \"vr_ents all\" lists everything" );
@@ -2153,7 +2160,7 @@ static void VR_DualLoadSettings( const char *model )
 	Q_strncpy( vr_dual_model, model, sizeof( vr_dual_model ));
 
 	for( i = 0; i < ARRAYSIZE( vr_dual_keys ); i++ )
-		gEngfuncs.Cvar_SetValue( vr_dual_keys[i], ( i == 6 ) ? 1.0f : ( i == 7 ? 6.0f : 0.0f ));
+		gEngfuncs.Cvar_SetValue( vr_dual_keys[i], ( i == 6 ) ? 1.0f : ( i == 7 ? 5.0f : 0.0f ));
 
 	VR_DualFileName( model, file, sizeof( file ));
 
@@ -2168,9 +2175,10 @@ static void VR_DualLoadSettings( const char *model )
 		VR_ModelBaseName( model, fbase, sizeof( fbase ));
 
 		if( !Q_stricmp( fbase, "v_branch" ))
-			gEngfuncs.Cbuf_AddText( "vr_dual_cut 4\nvr_dual_cut_pitch -30\n" );
+			gEngfuncs.Cbuf_AddText( "vr_dual_cut 3\nvr_dual_cut_pitch -30\n" );
 		else if( !Q_stricmp( fbase, "v_switchblade" ))
-			gEngfuncs.Cbuf_AddText( "vr_dual_cut 5\n" );
+			gEngfuncs.Cbuf_AddText( "vr_dual_cut 4\n" );
+		else gEngfuncs.Cbuf_AddText( "vr_dual_cut_adjust -1\n" );
 	}
 	else
 	{
@@ -2196,11 +2204,11 @@ static void VR_DualLoadSettings( const char *model )
 
 			if( !Q_stricmp( base, "v_branch" ))
 			{
-				gEngfuncs.Cvar_SetValue( "vr_dual_cut", 4.0f );
+				gEngfuncs.Cvar_SetValue( "vr_dual_cut", 3.0f );
 				gEngfuncs.Cvar_SetValue( "vr_dual_cut_pitch", -30.0f );
 			}
 			else
-				gEngfuncs.Cvar_SetValue( "vr_dual_cut", 5.0f );
+				gEngfuncs.Cvar_SetValue( "vr_dual_cut", 4.0f );
 		}
 	}
 }
@@ -2363,6 +2371,12 @@ void VR_UIProbe( void )
 	if( vr_probe_frames <= 0 || --vr_probe_frames > 0 )
 		return;
 
+	if( !pglGetBooleanv || !pglGetFloatv || !pglIsEnabled || !pglReadPixels )
+	{
+		gEngfuncs.Con_Printf( "VR probe: this OpenGL does not offer what the probe needs\n" );
+		return;
+	}
+
 	pglGetIntegerv( GL_FRAMEBUFFER_BINDING, &fbo );
 	pglGetIntegerv( 0x8B8D, &prog );	// GL_CURRENT_PROGRAM
 	pglGetIntegerv( GL_ACTIVE_TEXTURE_ARB, &tmu );
@@ -2393,7 +2407,6 @@ void VR_DrawDualWeapon( void )
 	vec3_t origin;
 	float vang[3], scale;
 	qboolean wrote;
-	GLint dual_fbo = 0;
 
 	if( !vr_dual.value || !vr.in_eye_pass || !VR_CofDualModel( model, sizeof( model )))
 		return;
@@ -2415,9 +2428,7 @@ void VR_DrawDualWeapon( void )
 	// the engine's own studio renderer honours the angles we give; the game's renderer for this second weapon
 	// followed the arm but did not turn with the hand
 	// the game draws this weapon with its own programs and states; nothing of that may reach the screens drawn later
-	pglGetIntegerv( GL_FRAMEBUFFER_BINDING, &dual_fbo );
 	pglPushAttrib( GL_ALL_ATTRIB_BITS );
-	pglPushClientAttrib( GL_CLIENT_ALL_ATTRIB_BITS );
 	R_StudioForceBuiltin( vr_dual_builtin.value != 0.0f );
 	R_StudioSetDualPose( true, model, origin, vang );
 
@@ -2437,9 +2448,7 @@ void VR_DrawDualWeapon( void )
 	if( pglUseProgramObjectARB )
 		pglUseProgramObjectARB( 0 );
 
-	pglPopClientAttrib();
 	pglPopAttrib();
-	pglBindFramebuffer( GL_FRAMEBUFFER, dual_fbo );
 	pglDepthMask( GL_TRUE );
 	pglColor4f( 1.0f, 1.0f, 1.0f, 1.0f );
 
