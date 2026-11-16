@@ -45,6 +45,7 @@ float VR_CofDepthMax( void );
 void VR_CofBeginFrame( void );
 void VR_CofBeforePass( const void *frustum_planes, const float *eyeorigin, const float *eyeangles );
 void VR_CofHideSecondary( qboolean hide );
+qboolean VR_CofHideDeathArm( void );
 qboolean vr_dual_hide_game_copy( void );
 void VR_CofEndFrame( void );
 qboolean VR_GetPassSize( int *width, int *height );

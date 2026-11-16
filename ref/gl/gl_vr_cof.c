@@ -42,7 +42,10 @@ static CVAR_DEFINE_AUTO( vr_cof_eyeangles, "1", FCVAR_ARCHIVE, "1 = give the cli
 static CVAR_DEFINE_AUTO( vr_cof_eyeorigin, "1", FCVAR_ARCHIVE, "1 = centre the client.dll sky on the eye being drawn instead of the game's view origin" );
 static CVAR_DEFINE_AUTO( vr_cof_depth, "0.8", 0, "far end of the depth range the world is drawn in while the game's client.dll is attached (it keeps 0.8 to 1.0 for its sky). 1 = off" );
 static CVAR_DEFINE_AUTO( vr_cof_watersize, "1", FCVAR_ARCHIVE, "1 = tell the game's water effect the size of the eye picture (it copies the screen from the bottom left corner at the window size). Experimental" );
-static CVAR_DEFINE_AUTO( vr_dual_grace, "2.5", FCVAR_ARCHIVE, "seconds the left weapon of a dual wield stays drawn when the game hides it for a moment (using a door)" );
+static CVAR_DEFINE_AUTO( vr_hide_death_arm, "1", FCVAR_ARCHIVE, "1 = the arm that falls flat on the game over screen is not drawn" );
+static CVAR_DEFINE_AUTO( vr_light_life, "1", FCVAR_ARCHIVE, "lights of the game that live longer than this many seconds are map lights and are not moved to your hand (0 = move all)" );
+static CVAR_DEFINE_AUTO( vr_dual_dbg, "0", 0, "1 = print when the game changes the dual wield mode (finds why the left weapon vanishes at doors)" );
+static CVAR_DEFINE_AUTO( vr_dual_grace, "8", FCVAR_ARCHIVE, "seconds the left weapon of a dual wield stays drawn when the game hides it for a moment (using a door)" );
 static CVAR_DEFINE_AUTO( vr_dual_idle_list, "v_p345=idletest+v_glock=idle1+v_switchblade=p2idle+v_branch=idle_onehand", FCVAR_ARCHIVE, "the idle animation the game uses for each weapon in the left hand (learned while you play): weapon=animation+weapon=animation" );
 static CVAR_DEFINE_AUTO( vr_cof_watercomp, "1", FCVAR_ARCHIVE, "the game's own water reflection is a copy of the picture shifted 'up' on the screen. 1 = shift towards the real up of the world (stable when you tilt your head), -1 = the other way round, 0 = shift along the screen like the flat game" );
 static CVAR_DEFINE_AUTO( vr_cof_waterscale, "0.5", FCVAR_ARCHIVE, "how far the game's water reflection is shifted (1 = like the flat game)" );
@@ -373,6 +376,12 @@ static void COF_Relight( void )
 		if( l[7] < now || l[3] <= 0.0f )
 			continue;
 
+		// the game's own lights for a held item are made again every frame, so they only live a moment. A light that lives
+		// long is one of the map (candles, lamps, alarms) and is left alone: it used to be pulled into the beam, which
+		// showed up as intense yellow and red flashes near the phone
+		if( vr_light_life.value > 0.0f && l[7] - now > vr_light_life.value )
+			continue;
+
 		// the game leaves the phone's light on when you put the phone away. Nothing of it shines then: the spotlight
 		// (gfx/flashlight.tga, the weapons' tacklights use flashlight2.tga) and the small lights around you
 		if( !hl.phone && ( l[3] == 60.0f && !tex[0] || ( spot && Q_stristr( tex, "flashlight.tga" ))))
@@ -430,7 +439,7 @@ static void VR_CofLightDump_f( void )
 			continue;
 
 		n++;
-		gEngfuncs.Con_Printf( "light %d: origin %.0f %.0f %.0f radius %.0f ratio %.2f angles %.0f %.0f texture '%s'\n", i, l[0], l[1], l[2], l[3], l[6], l[10], l[11], (const char *)( l + 15 ));
+		gEngfuncs.Con_Printf( "light %d: origin %.0f %.0f %.0f radius %.0f ratio %.2f angles %.0f %.0f life %.2f key %.0f color %.2f %.2f texture '%s'\n", i, l[0], l[1], l[2], l[3], l[6], l[10], l[11], l[7] - now, l[9], l[4], l[5], (const char *)( l + 15 ));
 	}
 
 	gEngfuncs.Con_Printf( "%d active lights, hand light %s\n", n, hl.valid ? ( hl.omni ? "omni" : "spot" ) : "none" );
@@ -688,7 +697,8 @@ float VR_CofDepthMax( void )
 void VR_CofHideSecondary( qboolean hide )
 {
 #if defined( _WIN32 )
-	if( !cof.ok || !cof.dual_ok || *cof.dualmode != 3 )
+	// mode 2 is the arm that falls over when you die: not shown in VR (vr_hide_death_arm)
+	if( !cof.ok || !cof.dual_ok || ( *cof.dualmode != 3 && !( *cof.dualmode == 2 && vr_hide_death_arm.value )))
 	{
 		cof.hid_secondary = -1;
 		return;
@@ -707,6 +717,15 @@ void VR_CofHideSecondary( qboolean hide )
 #endif
 }
 
+qboolean VR_CofHideDeathArm( void )
+{
+#if defined( _WIN32 )
+	return cof.ok && cof.dual_ok && vr_hide_death_arm.value && *cof.dualmode == 2;
+#else
+	return false;
+#endif
+}
+
 // the weapon in the left hand of a dual wield: the game draws it itself, in its "secondary view" (see COF_SECONDARY)
 qboolean VR_CofDualModel( char *out, int size )
 {
@@ -716,10 +735,17 @@ qboolean VR_CofDualModel( char *out, int size )
 	// the game hides the left weapon for a moment while a door is used; it stays drawn through that short time
 	static double last_seen;
 	static char last_name[64];
-	double now = gp_cl ? gp_cl->time : 0.0;
+	// the real clock: the game's own time restarts when a door loads the next part of the map
+	double now = gp_host ? gp_host->realtime : 0.0;
+	static int last_mode = -99;
 
 	if( !cof.ok || !cof.dual_ok )
 		return false;
+
+	if( vr_dual_dbg.value && *cof.dualmode != last_mode )
+		gEngfuncs.Con_Printf( "VR dual: the game's dual wield mode is now %d, left weapon '%s'\n", *cof.dualmode, cof.dualname );
+
+	last_mode = *cof.dualmode;
 
 	if( *cof.dualmode == 3 && Q_strlen( cof.dualname ) >= 2 )
 	{
@@ -729,7 +755,7 @@ qboolean VR_CofDualModel( char *out, int size )
 		return true;
 	}
 
-	if( last_name[0] && now >= last_seen && now - last_seen < vr_dual_grace.value && cof.dualname[0] )
+	if( last_name[0] && now >= last_seen && now - last_seen < vr_dual_grace.value && *cof.dualmode != 0 )
 	{
 		Q_strncpy( out, last_name, size );
 		return true;
@@ -973,9 +999,9 @@ qboolean VR_CofDrawDual( const float *origin, const float *pitch_yaw_roll )
 	qboolean wrote = false;
 #if defined( _WIN32 )
 	float so[3], sa[3], ea[6], eb[6];
-	int sflag;
+	int sflag, smode;
 
-	if( !cof.ok || !cof.dual_ok )
+	if( !cof.ok || !cof.dual_ok || *cof.dualmode == 0 )
 		return false;
 
 	memcpy( so, cof.vorigin, sizeof( so ));
@@ -985,6 +1011,13 @@ qboolean VR_CofDrawDual( const float *origin, const float *pitch_yaw_roll )
 	memcpy( cof.vorigin, origin, sizeof( so ));
 	memcpy( cof.vangles, pitch_yaw_roll, sizeof( sa ));
 	*cof.secondary = 1;
+
+	// while the game shows something else in its secondary view for a moment (a door being used), the left weapon is
+	// still drawn: the mode is 3 only for this draw. Mode 0 is the night vision goggles, which is never replaced
+	smode = *cof.dualmode;
+
+	if( smode != 3 )
+		*cof.dualmode = 3;
 
 	if( cof.ent_ok )
 	{
@@ -1007,6 +1040,7 @@ qboolean VR_CofDrawDual( const float *origin, const float *pitch_yaw_roll )
 		memcpy( cof.ent_b, eb, sizeof( eb ));
 	}
 
+	*cof.dualmode = smode;
 	*cof.secondary = sflag;
 	memcpy( cof.vorigin, so, sizeof( so ));
 	memcpy( cof.vangles, sa, sizeof( sa ));
@@ -1029,6 +1063,9 @@ void VR_CofInitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_cof_watersize );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_idle_list );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_grace );
+	gEngfuncs.Cvar_RegisterVariable( &vr_dual_dbg );
+	gEngfuncs.Cvar_RegisterVariable( &vr_light_life );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hide_death_arm );
 	gEngfuncs.Cvar_RegisterVariable( &vr_cof_watercomp );
 	gEngfuncs.Cvar_RegisterVariable( &vr_cof_waterscale );
 	gEngfuncs.Cvar_RegisterVariable( &vr_cof_depth );

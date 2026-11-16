@@ -267,6 +267,7 @@ static CVAR_DEFINE_AUTO( vr_dual_clip_tex, "", FCVAR_ARCHIVE, "extra texture nam
 static CVAR_DEFINE_AUTO( vr_dual_anim_hold, "idle+draw+holster+equip+deploy+reload+pull+hide+show+inspect+fidget+lean+sprint+walk+run", FCVAR_ARCHIVE, "animation names (part of the name, separated by +) that a gun on the left hand does NOT play" );
 static CVAR_DEFINE_AUTO( vr_dual_anim_play, "shoot+fire+shot", FCVAR_ARCHIVE, "parts of the animation names of the left weapon that are allowed to play. Everything else (idle, draw, melee, reload...) holds the first idle pose" );
 static CVAR_DEFINE_AUTO( vr_dual_builtin, "1", FCVAR_ARCHIVE, "1 = the left weapon of a dual wield is drawn by the engine's own studio renderer (it then turns with your hand). 0 = the game's renderer" );
+static CVAR_DEFINE_AUTO( vr_melee_surface, "1", FCVAR_ARCHIVE, "1 = a swing with no creature on its path is aimed at the surface it runs into (boards, crates, doors)" );
 static CVAR_DEFINE_AUTO( vr_melee_aim, "1", FCVAR_ARCHIVE, "1 = a swing is aimed at where the tip of the weapon is. 0 = the old way, along the direction of the swing" );
 static CVAR_DEFINE_AUTO( vr_melee_radius, "10", FCVAR_ARCHIVE, "how far (game units) from the path of the weapon a creature still counts as hit by the swing" );
 static CVAR_DEFINE_AUTO( vr_melee_predict, "70", FCVAR_ARCHIVE, "how far (game units) along the swing the search for a creature goes" );
@@ -502,6 +503,7 @@ void VR_InitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_lh_cut_bone );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_muzzle );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_own );
+	gEngfuncs.Cvar_RegisterVariable( &vr_melee_surface );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hand_reach );
 	gEngfuncs.Cvar_RegisterVariable( &vr_anim_play );
 	gEngfuncs.Cvar_RegisterVariable( &vr_anim_mask );
@@ -1033,7 +1035,14 @@ static float VR_SwingHand( int hand, const ref_viewpass_t *game, const vec3_t ey
 				VectorMA( tip, vr_melee_predict.value, dir, b );
 
 				if( !VR_FindMeleeTarget( a, b, target ))
-					VectorMA( tip, vr_melee_lead.value, dir, target );
+				{
+					// no creature on the path: aim at what the swing runs into (planks, doors, walls). Only aiming a few units
+					// ahead of the tip made swings at boards and crates miss: the game's own hit comes from your eye
+					if( vr_melee_surface.value && VR_TraceRay( a, dir, vr_melee_reach.value + 8.0f, eye, target ))
+						VectorMA( target, 3.0f, dir, target );
+					else
+						VectorMA( tip, vr_melee_lead.value, dir, target );
+				}
 
 				hit = false;
 			}
@@ -2110,6 +2119,47 @@ static const char *vr_builtin_profiles[][2] =
 // ---- dual wielding: the weapon in the left hand
 // The game draws it itself (client.dll, its "secondary view"), so all we do is give it the pose of the left hand,
 // worked out from the numbers of that weapon (the built in profile), mirrored for the left hand, plus vr_dual_*.
+// Applies a saved settings file (lines of: cvar value) right away. "exec" only queues the commands, and loading a save or a
+// map clears that queue, so the left and right hand positions of a weapon that was already in hand were lost after a load
+static void VR_ApplyCfgFile( const char *file )
+{
+	fs_offset_t len = 0;
+	char *data = (char *)gEngfuncs.fsapi->LoadFileMalloc( file, &len, false ), *p;
+
+	if( !data )
+		return;
+
+	p = data;
+
+	while( p < data + len )
+	{
+		char name[64], value[64];
+		int n = 0;
+
+		while( *p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' ) p++;
+
+		while( p < data + len && *p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n' && n < (int)sizeof( name ) - 1 )
+			name[n++] = *p++;
+
+		name[n] = 0;
+		n = 0;
+
+		while( *p == ' ' || *p == '\t' || *p == '"' ) p++;
+
+		while( p < data + len && *p && *p != '"' && *p != '\r' && *p != '\n' && n < (int)sizeof( value ) - 1 )
+			value[n++] = *p++;
+
+		value[n] = 0;
+
+		while( p < data + len && *p && *p != '\n' ) p++;
+
+		if( !Q_strncmp( name, "vr_", 3 ) && value[0] && gEngfuncs.pfnGetCvarPointer( name ))
+			gEngfuncs.Cvar_Set( name, value );
+	}
+
+	free( data );
+}
+
 static qboolean VR_TextNumber( const char *text, const char *key, float *out )
 {
 	const char *p = text;
@@ -2178,17 +2228,19 @@ static void VR_DualLoadSettings( const char *model )
 	{
 		char fbase[48];
 
-		Q_snprintf( cmd, sizeof( cmd ), "exec %s\n", file );
-		gEngfuncs.Cbuf_AddText( cmd );
+		VR_ApplyCfgFile( file );
 
 		// the arm cut of these two is set after the file, so it is the same for everyone
 		VR_ModelBaseName( model, fbase, sizeof( fbase ));
 
 		if( !Q_stricmp( fbase, "v_branch" ))
-			gEngfuncs.Cbuf_AddText( "vr_dual_cut 3\nvr_dual_cut_pitch -30\n" );
+		{
+			gEngfuncs.Cvar_SetValue( "vr_dual_cut", 3.0f );
+			gEngfuncs.Cvar_SetValue( "vr_dual_cut_pitch", -30.0f );
+		}
 		else if( !Q_stricmp( fbase, "v_switchblade" ))
-			gEngfuncs.Cbuf_AddText( "vr_dual_cut 4\n" );
-		else gEngfuncs.Cbuf_AddText( "vr_dual_cut_adjust -1\n" );
+			gEngfuncs.Cvar_SetValue( "vr_dual_cut", 4.0f );
+		else gEngfuncs.Cvar_SetValue( "vr_dual_cut", gEngfuncs.pfnGetCvarFloat( "vr_dual_cut" ) - 1.0f );
 	}
 	else
 	{
@@ -2919,10 +2971,7 @@ static void VR_UpdateWeaponProfile( void )
 	VR_WeaponFileName( model, file, sizeof( file ));
 
 	if( gEngfuncs.fsapi->FileExists( file, false ))
-	{
-		Q_snprintf( cmd, sizeof( cmd ), "exec %s\n", file );
-		gEngfuncs.Cbuf_AddText( cmd );
-	}
+		VR_ApplyCfgFile( file );
 }
 
 static void VR_WeaponSave_f( void )

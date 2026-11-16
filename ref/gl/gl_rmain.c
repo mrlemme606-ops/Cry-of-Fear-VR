@@ -991,7 +991,7 @@ static void R_DrawEntitiesOnList( void )
 	if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 	{
 		// VR: the game's own copy of the left-hand weapon is skipped here (it sat in front of the body)
-		qboolean hide2 = VR_IsActive() && VR_CofActive() && vr_dual_hide_game_copy();
+		qboolean hide2 = VR_IsActive() && VR_CofActive() && ( vr_dual_hide_game_copy() || VR_CofHideDeathArm( ));
 
 		if( hide2 )
 			VR_CofHideSecondary( true );

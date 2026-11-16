@@ -135,6 +135,7 @@ static CVAR_DEFINE_AUTO( vr_melee_cooldown, "0.3", FCVAR_ARCHIVE, "seconds betwe
 static CVAR_DEFINE_AUTO( vr_key_swing, "mouse1", FCVAR_ARCHIVE, "key pressed when you swing a melee weapon" );
 static CVAR_DEFINE_AUTO( vr_key_whip, "mouse2", FCVAR_ARCHIVE, "key pressed when you swing a gun (pistol whip). empty = nothing" );
 static CVAR_DEFINE_AUTO( vr_key_reload, "r", FCVAR_ARCHIVE, "key pressed for you when a manual reload is finished (the game then does the actual reload)" );
+static CVAR_DEFINE_AUTO( vr_move_debug, "0", 0, "1 = print the walking numbers 4 times a second while the left stick is pushed (stick, command, real speed, the game's speed limit)" );
 static CVAR_DEFINE_AUTO( vr_debug_move, "0", 0, "print the player's movement type when it changes (helps find where analog movement fails)" );
 
 // which key each controller button presses. single character, or mouse1/2/3, space, ctrl, shift, enter, tab, escape. empty = nothing
@@ -185,6 +186,7 @@ static vec3_t vr_qs_start;
 extern void S_VRSwingStart( int weapon, int hand );
 static int vr_cur_weapon = -1;
 static double vr_swing_hold, vr_lswing_hold;
+static double vr_move_dbg_until;
 static float vr_qs_yaw;	// the way the hand pointed when the selector opened (radians): 1 2 3 run from its left to its right
 static double vr_a_since;
 static int vr_jump_frames;
@@ -690,6 +692,7 @@ void IN_VRInit( void )
 	Cvar_RegisterVariable( &vr_move_digital );
 	Cvar_RegisterVariable( &vr_move_digital_ents );
 	Cvar_RegisterVariable( &vr_debug_move );
+	Cvar_RegisterVariable( &vr_move_debug );
 
 	for( i = 0; i < VRB_COUNT; i++ )
 		Cvar_RegisterVariable( vr_key_cvars[i] );
@@ -2167,6 +2170,25 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 			if( fwd < -0.3f ) SetBits( cmd->buttons, IN_BACK );
 			if( side > 0.3f ) SetBits( cmd->buttons, IN_MOVERIGHT );
 			if( side < -0.3f ) SetBits( cmd->buttons, IN_MOVELEFT );
+		}
+	}
+
+	if( vr_move_debug.value && clgame.pmove && ( fabs( fwd ) > 0.1f || fabs( side ) > 0.1f || host.realtime < vr_move_dbg_until ))
+	{
+		static double next;
+
+		if( fabs( fwd ) > 0.1f || fabs( side ) > 0.1f )
+			vr_move_dbg_until = host.realtime + 3.0;
+
+		if( host.realtime >= next )
+		{
+			float vx = clgame.pmove->velocity[0], vy = clgame.pmove->velocity[1];
+			float a = DEG2RAD( cmd->viewangles[YAW] ), vf = vx * cos( a ) + vy * sin( a ), vs = vx * sin( a ) - vy * cos( a );
+
+			next = host.realtime + 0.25;
+			Con_Printf( "VR move: stick %.2f %.2f | command fwd %.0f side %.0f | real speed fwd %.0f side %.0f | game limit %.0f client limit %.0f | %s%s | ground %d\n",
+				fwd, side, cmd->forwardmove, cmd->sidemove, vf, vs, clgame.pmove->maxspeed, clgame.pmove->clientmaxspeed,
+				digital ? "keys" : "analog", stuck_forced ? " (forced)" : "", clgame.pmove->onground );
 		}
 	}
 
