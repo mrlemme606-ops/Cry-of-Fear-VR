@@ -230,6 +230,8 @@ void VR_HUDCapture( void )
 
 	hud.have = false;
 
+	VR_KeyWindowAlpha();
+
 	if( !vr_hud_hand.value || ui.failed || hud.failed || !VR_IsActive( ) || !VR_FrameDone( ))
 		return;
 
@@ -607,9 +609,11 @@ void VR_UIUpdate( void )
 	HmdMatrix34_t panel;
 	Texture_t tex;
 	float fx, fz, len, head_yaw, diff, dist, zx, zz, pw, ph;
+	qboolean cutscene = false;
 	int w = gpGlobals->width, h = gpGlobals->height;
 
 	VR_UIProbe();
+	VR_KeyWindowAlpha();
 
 	// no 3D picture this frame (the intro videos, the Xash menu, loading): the panel with the window is all there is,
 	// and SteamVR's own environment is faded to black behind it
@@ -730,9 +734,27 @@ void VR_UIUpdate( void )
 	tex.eColorSpace = (EColorSpace)1;	// gamma
 
 	ui.overlay->SetOverlayWidthInMeters( ui.handle, pw );
-	ui.overlay->SetOverlayAlpha( ui.handle, vr_ui_alpha.value );
+	// cutscenes show no UI at all (the engine says when the camera is not the player)
+	{
+		static cvar_t *cut, *allow;
+
+		if( !cut ) cut = gEngfuncs.pfnGetCvarPointer( "vr_in_cutscene" );
+		if( !allow ) allow = gEngfuncs.pfnGetCvarPointer( "vr_ui_cutscene" );
+
+		cutscene = cut && cut->value > 0.5f && ( !allow || allow->value > 0.5f );
+	}
+
+	ui.overlay->SetOverlayAlpha( ui.handle, cutscene ? 0.0f : vr_ui_alpha.value );
 	ui.overlay->SetOverlayTransformAbsolute( ui.handle, (ETrackingUniverseOrigin)1, &panel );
 	ui.overlay->SetOverlayTexture( ui.handle, &tex );
+
+	if( cutscene )
+	{
+		ui.valid = false;
+		VR_UIHideHUD();
+		VR_DrainGLErrors();
+		return;
+	}
 
 	VR_UIUpdatePointer( &panel );
 	VR_UIUpdateHUD();

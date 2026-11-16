@@ -313,7 +313,26 @@ static void R_Clear( int bitMask )
 
 	bits &= bitMask;
 
-	pglClear( bits );
+	// VR: the picture must start black. Nothing else clears the colour in the plain window path, so the last frame
+	// (the other eye, the HUD, the console) would show through wherever nothing is drawn (black skies, window panes)
+	if( VR_ClearColorWanted( ))
+	{
+		GLboolean scissor = pglIsEnabled( GL_SCISSOR_TEST );
+
+		if( scissor )
+			pglDisable( GL_SCISSOR_TEST );
+
+		pglColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+		pglDepthMask( GL_TRUE );
+		pglClearColor( 0.0f, 0.0f, 0.0f, 1.0f );
+		bits |= GL_COLOR_BUFFER_BIT;
+		pglClear( bits );
+
+		if( scissor )
+			pglEnable( GL_SCISSOR_TEST );
+	}
+	else
+		pglClear( bits );
 
 	// change ordering for overview
 	if( FBitSet( RI.rvp.flags, RF_DRAW_OVERVIEW ))
@@ -1224,6 +1243,8 @@ void R_RenderFrame( const ref_viewpass_t *rvp )
 		ref_viewpass_t eyepass;
 		int eye;
 
+		VR_SetSceneLoop( true );
+
 		R_SetupRefParams( rvp );
 		tr.fCustomRendering = false;
 		VR_CofBeginFrame();
@@ -1274,6 +1295,7 @@ void R_RenderFrame( const ref_viewpass_t *rvp )
 			VR_EndEyePass( eye );
 		}
 
+		VR_SetSceneLoop( false );
 		VR_CofEndFrame();
 		VR_FinishFrame();
 		return;

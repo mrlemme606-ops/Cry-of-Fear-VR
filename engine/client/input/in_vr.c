@@ -113,7 +113,9 @@ static CVAR_DEFINE_AUTO( vr_in_lmuz_x, "0", 0, "(internal) left muzzle position"
 static CVAR_DEFINE_AUTO( vr_in_lmuz_y, "0", 0, "(internal) left muzzle position" );
 static CVAR_DEFINE_AUTO( vr_in_lmuz_z, "0", 0, "(internal) left muzzle position" );
 static CVAR_DEFINE_AUTO( vr_menu_version, "0", FCVAR_ARCHIVE, "(internal) settings of the VR menu that were set once" );
-static CVAR_DEFINE_AUTO( vr_move_keys, "1", FCVAR_ARCHIVE, "1 = the left stick also presses the walking keys (like the keyboard), 0 = only the analog walking command. Try 0 if walking in circles lags" );
+static CVAR_DEFINE_AUTO( vr_move_keys2, "0", FCVAR_ARCHIVE, "1 = the left stick also presses the walking keys. Off by default: a key stays pressed until its axis is nearly zero, which pulled the walking direction towards it while you swept the stick around (walking in circles lagged)" );
+static CVAR_DEFINE_AUTO( vr_in_cutscene, "0", 0, "(internal) a cutscene is shown (the camera is not the player)" );
+static CVAR_DEFINE_AUTO( vr_ui_cutscene, "1", FCVAR_ARCHIVE, "1 = no UI panel is shown during cutscenes" );
 static CVAR_DEFINE_AUTO( vr_melee_assist, "1", FCVAR_ARCHIVE, "1 = a swing that goes towards a monster close by is aimed at it, so it hits (the way most VR games do it)" );
 static CVAR_DEFINE_AUTO( vr_melee_assist_range, "150", FCVAR_ARCHIVE, "how far from your head a monster can be for the swing assist, in units" );
 static CVAR_DEFINE_AUTO( vr_menu_debug, "0", 0, "1 = print every command the game sends (helps find the button of the game's own main menu that opens the options)" );
@@ -670,7 +672,9 @@ void IN_VRInit( void )
 	Cvar_RegisterVariable( &vr_menu_debug );
 	Cvar_RegisterVariable( &vr_melee_assist );
 	Cvar_RegisterVariable( &vr_melee_assist_range );
-	Cvar_RegisterVariable( &vr_move_keys );
+	Cvar_RegisterVariable( &vr_move_keys2 );
+	Cvar_RegisterVariable( &vr_in_cutscene );
+	Cvar_RegisterVariable( &vr_ui_cutscene );
 	Cvar_RegisterVariable( &vr_in_wand_yaw );
 	Cvar_RegisterVariable( &vr_in_lmuz_x );
 	Cvar_RegisterVariable( &vr_in_lmuz_y );
@@ -1528,6 +1532,13 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 
 			if( vr_in_hud_off.value != off )
 				Cvar_DirectSetValue( &vr_in_hud_off, off );
+
+			{
+				float cut = ( menu < 0.5f && cls.state == ca_active && cl.viewentity != cl.playernum + 1 ) ? 1.0f : 0.0f;
+
+				if( vr_in_cutscene.value != cut )
+					Cvar_DirectSetValue( &vr_in_cutscene, cut );
+			}
 		}
 	}
 
@@ -1908,6 +1919,10 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 			stuck_since = 0.0;
 		}
 
+		// the stick was let go: the keys are not forced any longer, the next push starts with analog walking again
+		if( push < 0.3f )
+			force_until = 0.0;
+
 		if( host.realtime < force_until )
 		{
 			on_boat = true;
@@ -2146,7 +2161,7 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 			}
 		}
 
-		if( vr_move_keys.value )
+		if( vr_move_keys2.value )
 		{
 			if( fwd > 0.3f ) SetBits( cmd->buttons, IN_FORWARD );
 			if( fwd < -0.3f ) SetBits( cmd->buttons, IN_BACK );

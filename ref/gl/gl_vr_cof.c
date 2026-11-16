@@ -42,6 +42,7 @@ static CVAR_DEFINE_AUTO( vr_cof_eyeangles, "1", FCVAR_ARCHIVE, "1 = give the cli
 static CVAR_DEFINE_AUTO( vr_cof_eyeorigin, "1", FCVAR_ARCHIVE, "1 = centre the client.dll sky on the eye being drawn instead of the game's view origin" );
 static CVAR_DEFINE_AUTO( vr_cof_depth, "0.8", 0, "far end of the depth range the world is drawn in while the game's client.dll is attached (it keeps 0.8 to 1.0 for its sky). 1 = off" );
 static CVAR_DEFINE_AUTO( vr_cof_watersize, "1", FCVAR_ARCHIVE, "1 = tell the game's water effect the size of the eye picture (it copies the screen from the bottom left corner at the window size). Experimental" );
+static CVAR_DEFINE_AUTO( vr_dual_grace, "2.5", FCVAR_ARCHIVE, "seconds the left weapon of a dual wield stays drawn when the game hides it for a moment (using a door)" );
 static CVAR_DEFINE_AUTO( vr_dual_idle_list, "v_p345=idletest+v_glock=idle1+v_switchblade=p2idle+v_branch=idle_onehand", FCVAR_ARCHIVE, "the idle animation the game uses for each weapon in the left hand (learned while you play): weapon=animation+weapon=animation" );
 static CVAR_DEFINE_AUTO( vr_cof_watercomp, "1", FCVAR_ARCHIVE, "the game's own water reflection is a copy of the picture shifted 'up' on the screen. 1 = shift towards the real up of the world (stable when you tilt your head), -1 = the other way round, 0 = shift along the screen like the flat game" );
 static CVAR_DEFINE_AUTO( vr_cof_waterscale, "0.5", FCVAR_ARCHIVE, "how far the game's water reflection is shifted (1 = like the flat game)" );
@@ -712,11 +713,29 @@ qboolean VR_CofDualModel( char *out, int size )
 #if defined( _WIN32 )
 	COF_Resolve();
 
-	if( !cof.ok || !cof.dual_ok || *cof.dualmode != 3 || Q_strlen( cof.dualname ) < 2 )
+	// the game hides the left weapon for a moment while a door is used; it stays drawn through that short time
+	static double last_seen;
+	static char last_name[64];
+	double now = gp_cl ? gp_cl->time : 0.0;
+
+	if( !cof.ok || !cof.dual_ok )
 		return false;
 
-	Q_strncpy( out, cof.dualname, size );
-	return true;
+	if( *cof.dualmode == 3 && Q_strlen( cof.dualname ) >= 2 )
+	{
+		Q_strncpy( last_name, cof.dualname, sizeof( last_name ));
+		last_seen = now;
+		Q_strncpy( out, cof.dualname, size );
+		return true;
+	}
+
+	if( last_name[0] && now >= last_seen && now - last_seen < vr_dual_grace.value && cof.dualname[0] )
+	{
+		Q_strncpy( out, last_name, size );
+		return true;
+	}
+
+	return false;
 #else
 	return false;
 #endif
@@ -1009,6 +1028,7 @@ void VR_CofInitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_cof_prepass );
 	gEngfuncs.Cvar_RegisterVariable( &vr_cof_watersize );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_idle_list );
+	gEngfuncs.Cvar_RegisterVariable( &vr_dual_grace );
 	gEngfuncs.Cvar_RegisterVariable( &vr_cof_watercomp );
 	gEngfuncs.Cvar_RegisterVariable( &vr_cof_waterscale );
 	gEngfuncs.Cvar_RegisterVariable( &vr_cof_depth );

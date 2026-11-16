@@ -14,6 +14,7 @@ GNU General Public License for more details.
 */
 
 #include "gl_local.h"
+#include "gl_vr.h"
 
 /*
 =============
@@ -35,6 +36,7 @@ R_DrawStretchPic
 */
 void R_DrawStretchPic( float x, float y, float w, float h, float s1, float t1, float s2, float t2, int texnum )
 {
+	VR_UITrace( "engine picture draw (HUD sprite, fade, tile clear)" );
 	GL_Bind( XASH_TEXTURE0, texnum );
 
 	pglBegin( GL_QUADS );

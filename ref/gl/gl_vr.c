@@ -32,6 +32,10 @@ Design notes:
 
 static void VR_UIProbe_f( void );
 
+#ifndef GL_INTENSITY
+#define GL_INTENSITY		0x8049
+#endif
+
 static void VR_DualCutAdjust_f( void )
 {
 	if( gEngfuncs.Cmd_Argc() > 1 )
@@ -251,6 +255,9 @@ static CVAR_DEFINE_AUTO( vr_dual_debug, "0", 0, "1 = print once a second whether
 static CVAR_DEFINE_AUTO( vr_dual_cut, "5", FCVAR_ARCHIVE, "where the arm of the left hand weapon is cut off, in units behind the hand (saved with vr_weapon_save_left)" );
 static CVAR_DEFINE_AUTO( vr_dual_cut_pitch, "0", FCVAR_ARCHIVE, "tilt of the left weapon's arm cut: pitch degrees (saved with vr_weapon_save_left)" );
 static CVAR_DEFINE_AUTO( vr_dual_cut_yaw, "0", FCVAR_ARCHIVE, "tilt of the left weapon's arm cut: yaw degrees (saved with vr_weapon_save_left)" );
+static CVAR_DEFINE_AUTO( vr_ui_key, "1", FCVAR_ARCHIVE, "the window is the floating UI. If something of the game covers all of it with opaque black (it did while dual wielding), black counts as see-through. 0 = never, 1 = only when the window is covered, 2 = always" );
+static CVAR_DEFINE_AUTO( vr_ui_key_gain, "1.5", FCVAR_ARCHIVE, "how solid the UI is drawn when the black cover is removed (1 = like on black, higher = brighter on the world)" );
+static CVAR_DEFINE_AUTO( vr_ui_trace, "0", 0, "1 = print which 2D draw step turns the middle of the window into opaque black (to find what draws the black cover)" );
 static CVAR_DEFINE_AUTO( vr_cut_follow, "0", FCVAR_ARCHIVE, "1 = the cut of the arm follows the wrist of the weapon model through its animations (shotgun slide, reloading); 0 = fixed to the controller" );
 static CVAR_DEFINE_AUTO( vr_cut_bone, "r_wr", FCVAR_ARCHIVE, "wrist bone of the right hand's weapon model that the arm cut follows (part of the name, separated by +). vr_vm_dump_tex 2 lists the bones" );
 static CVAR_DEFINE_AUTO( vr_lh_cut_bone, "l_wr", FCVAR_ARCHIVE, "wrist bone of the universal left hand that its arm cut follows" );
@@ -488,6 +495,9 @@ void VR_InitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_clip_tex );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_clip_all );
 	gEngfuncs.Cvar_RegisterVariable( &vr_cut_follow );
+	gEngfuncs.Cvar_RegisterVariable( &vr_ui_key );
+	gEngfuncs.Cvar_RegisterVariable( &vr_ui_key_gain );
+	gEngfuncs.Cvar_RegisterVariable( &vr_ui_trace );
 	gEngfuncs.Cvar_RegisterVariable( &vr_cut_bone );
 	gEngfuncs.Cvar_RegisterVariable( &vr_lh_cut_bone );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_muzzle );
@@ -2398,6 +2408,263 @@ void VR_UIProbe( void )
 		px[0] = px[1] = px[2] = px[3] = 77;
 		pglReadPixels( (int)( at[i][0] * ( w - 1 )), (int)( at[i][1] * ( h - 1 )), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px );
 		gEngfuncs.Con_Printf( "VR probe: window pixel at %.1f %.1f = r%d g%d b%d alpha %d\n", at[i][0], at[i][1], px[0], px[1], px[2], px[3] );
+	}
+}
+
+// The window holds the HUD and the menus and is shown as a floating panel, so what it holds must be see-through where
+// nothing is drawn. If the game covers the whole window with opaque black (the cause is not known, vr_ui_trace 1 looks for it),
+// the alpha of every pixel is made from its brightness instead: black becomes see-through, the UI stays.
+
+static struct
+{
+	GLuint prog, tex;
+	GLint u_win, u_gain;
+	int tw, th;
+	qboolean tried, ok;
+} key;
+
+static const char *key_vs =
+	"void main()\n"
+	"{\n"
+	"\tgl_TexCoord[0] = gl_MultiTexCoord0;\n"
+	"\tgl_Position = ftransform();\n"
+	"}\n";
+
+// the window was drawn over opaque black: its colour is already "colour times coverage", so the coverage is the brightest channel
+static const char *key_fs =
+	"uniform sampler2D uWin;\n"
+	"uniform float uGain;\n"
+	"void main()\n"
+	"{\n"
+	"\tvec3 c = texture2D( uWin, gl_TexCoord[0].st ).rgb;\n"
+	"\tfloat m = max( c.r, max( c.g, c.b ));\n"
+	"\tfloat a = clamp( m * uGain, 0.0, 1.0 );\n"
+	"\tgl_FragColor = vec4( c / max( m, 0.004 ), a );\n"
+	"}\n";
+
+static GLuint VR_KeyCompile( GLenum type, const char *src )
+{
+	GLuint sh = pglCreateShaderObjectARB( type );
+	GLint ok = 0;
+
+	pglShaderSourceARB( sh, 1, &src, NULL );
+	pglCompileShaderARB( sh );
+	pglGetObjectParameterivARB( sh, 0x8B81, &ok );
+
+	if( !ok )
+	{
+		pglDeleteObjectARB( sh );
+		return 0;
+	}
+
+	return sh;
+}
+
+static void VR_KeyBuild( void )
+{
+	GLuint vs, fs;
+
+	key.tried = true;
+
+	if( !GL_Support( GL_SHADER_GLSL100_EXT ) || !pglCreateProgramObjectARB || !pglUseProgramObjectARB || !pglUniform1iARB || !pglUniform1fARB )
+		return;
+
+	vs = VR_KeyCompile( GL_VERTEX_SHADER_ARB, key_vs );
+	fs = VR_KeyCompile( GL_FRAGMENT_SHADER_ARB, key_fs );
+
+	if( !vs || !fs )
+		return;
+
+	key.prog = pglCreateProgramObjectARB();
+	pglAttachObjectARB( key.prog, vs );
+	pglAttachObjectARB( key.prog, fs );
+	pglLinkProgramARB( key.prog );
+	key.u_win = pglGetUniformLocationARB( key.prog, "uWin" );
+	key.u_gain = pglGetUniformLocationARB( key.prog, "uGain" );
+	key.ok = key.u_win >= 0 && key.u_gain >= 0;
+}
+
+static qboolean VR_WindowPixelBlack( int x, int y )
+{
+	GLubyte px[4] = { 0, 0, 0, 0 };
+
+	pglReadPixels( x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px );
+	return px[3] > 250 && px[0] + px[1] + px[2] < 12;
+}
+
+// the HUD strips are in the bottom corners, so only the middle of the window is looked at
+static qboolean VR_WindowCovered( void )
+{
+	int w = gpGlobals->width, h = gpGlobals->height;
+
+	return VR_WindowPixelBlack( w / 2, h / 2 ) && VR_WindowPixelBlack( w * 3 / 10, h * 6 / 10 )
+		&& VR_WindowPixelBlack( w * 7 / 10, h * 6 / 10 ) && VR_WindowPixelBlack( w / 2, h * 8 / 10 );
+}
+
+// called by the renderer at points of the 2D drawing (vr_ui_trace)
+void VR_UITrace( const char *what )
+{
+	static qboolean was;
+	static int frame_marker;
+	qboolean now;
+
+	if( vr_ui_trace.value <= 0.0f || !VR_IsActive( ) || !pglReadPixels )
+		return;
+
+	now = VR_WindowPixelBlack( gpGlobals->width / 2, gpGlobals->height / 2 );
+
+	if( now != was )
+	{
+		was = now;
+		gEngfuncs.Con_Printf( "VR ui trace: the middle of the window %s at: %s (frame %d)\n", now ? "became opaque black" : "became see-through", what, frame_marker );
+	}
+
+	frame_marker++;
+}
+
+void VR_KeyWindowAlpha( void )
+{
+	int w = gpGlobals->width, h = gpGlobals->height;
+
+	if( vr_ui_key.value <= 0.0f || !VR_IsActive( ) || !pglCopyTexSubImage2D || !pglReadPixels )
+		return;
+
+	if( vr_ui_key.value < 2.0f && !VR_WindowCovered( ))
+		return;
+
+	if( !key.tried )
+		VR_KeyBuild();
+
+	if( key.ok )
+	{
+		int saved_prog = 0;
+
+		pglPushAttrib( GL_ALL_ATTRIB_BITS );
+
+		if( pglActiveTextureARB )
+			pglActiveTextureARB( GL_TEXTURE0_ARB );
+
+		if( !key.tex || key.tw != w || key.th != h )
+		{
+			if( !key.tex )
+				pglGenTextures( 1, &key.tex );
+
+			pglBindTexture( GL_TEXTURE_2D, key.tex );
+			pglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+			pglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+			pglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP );
+			pglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP );
+			pglTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL );
+			key.tw = w;
+			key.th = h;
+		}
+
+		pglBindTexture( GL_TEXTURE_2D, key.tex );
+		pglCopyTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, 0, 0, w, h );
+
+		pglMatrixMode( GL_PROJECTION );
+		pglPushMatrix();
+		pglLoadIdentity();
+		pglOrtho( 0.0, 1.0, 0.0, 1.0, -1.0, 1.0 );
+		pglMatrixMode( GL_MODELVIEW );
+		pglPushMatrix();
+		pglLoadIdentity();
+
+		pglDisable( GL_BLEND );
+		pglDisable( GL_DEPTH_TEST );
+		pglDisable( GL_CULL_FACE );
+		pglDisable( GL_ALPHA_TEST );
+		pglDisable( GL_SCISSOR_TEST );
+		pglEnable( GL_TEXTURE_2D );
+		pglColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+
+		pglGetIntegerv( 0x8B8D, &saved_prog );	// GL_CURRENT_PROGRAM
+		pglUseProgramObjectARB( key.prog );
+		pglUniform1iARB( key.u_win, 0 );
+		pglUniform1fARB( key.u_gain, bound( 1.0f, vr_ui_key_gain.value, 4.0f ));
+
+		pglBegin( GL_QUADS );
+		pglTexCoord2f( 0.0f, 0.0f ); pglVertex2f( 0.0f, 0.0f );
+		pglTexCoord2f( 1.0f, 0.0f ); pglVertex2f( 1.0f, 0.0f );
+		pglTexCoord2f( 1.0f, 1.0f ); pglVertex2f( 1.0f, 1.0f );
+		pglTexCoord2f( 0.0f, 1.0f ); pglVertex2f( 0.0f, 1.0f );
+		pglEnd();
+
+		pglUseProgramObjectARB( saved_prog );
+
+		pglMatrixMode( GL_MODELVIEW );
+		pglPopMatrix();
+		pglMatrixMode( GL_PROJECTION );
+		pglPopMatrix();
+		pglMatrixMode( GL_MODELVIEW );
+		pglPopAttrib();
+
+		glState.currentTextures[glState.activeTMU] = -1;
+		glState.currentTexturesIndex[glState.activeTMU] = -1;
+		return;
+	}
+
+	// no shaders: the alpha comes from the red channel (an intensity texture), which is good enough for white and orange UI
+	{
+		static GLuint tex;
+		static int tw, th;
+
+		if( !pglTexEnvi )
+			return;
+
+		pglPushAttrib( GL_ALL_ATTRIB_BITS );
+
+		if( pglActiveTextureARB )
+			pglActiveTextureARB( GL_TEXTURE0_ARB );
+
+		if( !tex || tw != w || th != h )
+		{
+			if( !tex )
+				pglGenTextures( 1, &tex );
+
+			pglBindTexture( GL_TEXTURE_2D, tex );
+			pglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+			pglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+			pglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP );
+			pglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP );
+			pglTexImage2D( GL_TEXTURE_2D, 0, GL_INTENSITY, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL );
+			tw = w;
+			th = h;
+		}
+
+		pglBindTexture( GL_TEXTURE_2D, tex );
+		pglCopyTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, 0, 0, w, h );
+
+		pglMatrixMode( GL_PROJECTION );
+		pglPushMatrix();
+		pglLoadIdentity();
+		pglOrtho( 0.0, 1.0, 0.0, 1.0, -1.0, 1.0 );
+		pglMatrixMode( GL_MODELVIEW );
+		pglPushMatrix();
+		pglLoadIdentity();
+
+		pglDisable( GL_BLEND );
+		pglDisable( GL_DEPTH_TEST );
+		pglDisable( GL_CULL_FACE );
+		pglDisable( GL_ALPHA_TEST );
+		pglDisable( GL_SCISSOR_TEST );
+		pglEnable( GL_TEXTURE_2D );
+		pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE );
+		pglColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE );
+
+		pglBegin( GL_QUADS );
+		pglTexCoord2f( 0.0f, 0.0f ); pglVertex2f( 0.0f, 0.0f );
+		pglTexCoord2f( 1.0f, 0.0f ); pglVertex2f( 1.0f, 0.0f );
+		pglTexCoord2f( 1.0f, 1.0f ); pglVertex2f( 1.0f, 1.0f );
+		pglTexCoord2f( 0.0f, 1.0f ); pglVertex2f( 0.0f, 1.0f );
+		pglEnd();
+
+		pglMatrixMode( GL_MODELVIEW );
+		pglPopMatrix();
+		pglMatrixMode( GL_PROJECTION );
+		pglPopMatrix();
+		pglMatrixMode( GL_MODELVIEW );
+		pglPopAttrib();
 	}
 }
 
@@ -4561,4 +4828,19 @@ void VR_FinishFrame( void )
 			vr_cam_have = false;
 		}
 	}
+}
+
+// true while the engine is drawing the VR eye, scope and water pictures. The plain window path has no per-eye colour clear
+// of its own, so what the last frame left in the window (the other eye, the HUD, the console) used to show through wherever
+// nothing was drawn: the black sky "warp".
+static qboolean vr_scene_loop;
+
+void VR_SetSceneLoop( qboolean on )
+{
+	vr_scene_loop = on;
+}
+
+qboolean VR_ClearColorWanted( void )
+{
+	return vr_scene_loop && VR_IsActive( );
 }

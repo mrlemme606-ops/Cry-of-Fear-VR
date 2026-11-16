@@ -543,8 +543,9 @@ static void CL_DrawScreenFade( void )
 	if( !alpha )
 		return;
 
-	// VR: a black fade (doors, saving, boats, level changes) only breaks the immersion, so it is not drawn
-	if( !FBitSet( sf->fadeFlags, FFADE_MODULATE ) && sf->fader + sf->fadeg + sf->fadeb < 60 && Cvar_VariableInteger( "vr_enable" ))
+	// VR: a fade (black for doors, saving, boats and level changes, the white flash of a flashback) is drawn into the window,
+	// which is a floating panel in VR: it would only black out or whiten that panel. So none is drawn.
+	if( Cvar_VariableInteger( "vr_enable" ))
 		return;
 
 	if( !FBitSet( sf->fadeFlags, FFADE_MODULATE ))
