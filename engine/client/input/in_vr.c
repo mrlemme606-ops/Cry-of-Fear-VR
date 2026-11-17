@@ -46,6 +46,21 @@ double vr_melee_window_until;	// read by the server (sv_phys.c): until then a me
 static CVAR_DEFINE_AUTO( vr_swing_sound, "1", FCVAR_ARCHIVE, "1 = a real swing plays the weapon's swing sound at once, and the game's own late swing sound is muted" );
 static CVAR_DEFINE_AUTO( vr_swing_sounds, "swing+miss+slash+whoosh+woosh+whip", FCVAR_ARCHIVE, "name parts of the game's swing sounds (separated by +)" );
 static CVAR_DEFINE_AUTO( vr_melee_hit_sounds, "hitbody+melee_hit", FCVAR_ARCHIVE, "name parts of the sounds of a hit that hurts someone (separated by +). The hand only vibrates when one plays right after a swing. vr_sound_debug 2 lists the sounds after a swing" );
+static CVAR_DEFINE_AUTO( vr_in_swing_contact, "0", 0, "(internal) swing contact data" );
+static CVAR_DEFINE_AUTO( vr_in_swing_cx, "0", 0, "(internal) swing contact data" );
+static CVAR_DEFINE_AUTO( vr_in_swing_cy, "0", 0, "(internal) swing contact data" );
+static CVAR_DEFINE_AUTO( vr_in_swing_cz, "0", 0, "(internal) swing contact data" );
+static CVAR_DEFINE_AUTO( vr_in_swing_dx, "0", 0, "(internal) swing contact data" );
+static CVAR_DEFINE_AUTO( vr_in_swing_dy, "0", 0, "(internal) swing contact data" );
+static CVAR_DEFINE_AUTO( vr_in_swing_dz, "0", 0, "(internal) swing contact data" );
+static CVAR_DEFINE_AUTO( vr_in_lswing_contact, "0", 0, "(internal) swing contact data" );
+static CVAR_DEFINE_AUTO( vr_in_lswing_cx, "0", 0, "(internal) swing contact data" );
+static CVAR_DEFINE_AUTO( vr_in_lswing_cy, "0", 0, "(internal) swing contact data" );
+static CVAR_DEFINE_AUTO( vr_in_lswing_cz, "0", 0, "(internal) swing contact data" );
+static CVAR_DEFINE_AUTO( vr_in_lswing_dx, "0", 0, "(internal) swing contact data" );
+static CVAR_DEFINE_AUTO( vr_in_lswing_dy, "0", 0, "(internal) swing contact data" );
+static CVAR_DEFINE_AUTO( vr_in_lswing_dz, "0", 0, "(internal) swing contact data" );
+static CVAR_DEFINE_AUTO( vr_melee_origin, "1", FCVAR_ARCHIVE, "1 = the game's hit of a swing is traced from the point where the weapon touched something (like Lambda1VR does it), not from your eyes" );
 static CVAR_DEFINE_AUTO( vr_melee_defer, "1", FCVAR_ARCHIVE, "1 = a swing only attacks when the weapon touches something (or a creature is in its way), aimed at the contact point. 0 = every swing attacks at once" );
 static CVAR_DEFINE_AUTO( vr_melee_hold, "0.12", FCVAR_ARCHIVE, "seconds the attack button is held for a real swing" );
 static CVAR_DEFINE_AUTO( vr_in_qs_pick, "0", 0, "(internal) the quick slot the renderer says the hand is over" );
@@ -189,6 +204,12 @@ extern void S_VRSwingStart( int weapon, int hand );
 static int vr_cur_weapon = -1;
 static double vr_swing_hold, vr_lswing_hold;
 static double vr_swing_pending_until, vr_lswing_pending_until;
+
+// read by the server (sv_phys.c): for the hit of a swing, the player looks from this point along this direction
+qboolean vr_melee_override;
+vec3_t vr_melee_eye;
+float vr_melee_pitch, vr_melee_yaw;
+double vr_melee_override_until;
 static qboolean vr_swing_pending, vr_lswing_pending;
 static double vr_move_dbg_until;
 static float vr_qs_yaw;	// the way the hand pointed when the selector opened (radians): 1 2 3 run from its left to its right
@@ -611,6 +632,21 @@ void IN_VRInit( void )
 	Cvar_RegisterVariable( &vr_in_ui_lkbd );
 	Cvar_RegisterVariable( &vr_melee_instant );
 	Cvar_RegisterVariable( &vr_melee_defer );
+	Cvar_RegisterVariable( &vr_melee_origin );
+	Cvar_RegisterVariable( &vr_in_swing_contact );
+	Cvar_RegisterVariable( &vr_in_swing_cx );
+	Cvar_RegisterVariable( &vr_in_swing_cy );
+	Cvar_RegisterVariable( &vr_in_swing_cz );
+	Cvar_RegisterVariable( &vr_in_swing_dx );
+	Cvar_RegisterVariable( &vr_in_swing_dy );
+	Cvar_RegisterVariable( &vr_in_swing_dz );
+	Cvar_RegisterVariable( &vr_in_lswing_contact );
+	Cvar_RegisterVariable( &vr_in_lswing_cx );
+	Cvar_RegisterVariable( &vr_in_lswing_cy );
+	Cvar_RegisterVariable( &vr_in_lswing_cz );
+	Cvar_RegisterVariable( &vr_in_lswing_dx );
+	Cvar_RegisterVariable( &vr_in_lswing_dy );
+	Cvar_RegisterVariable( &vr_in_lswing_dz );
 	Cvar_RegisterVariable( &vr_swing_sound );
 	Cvar_RegisterVariable( &vr_swing_sounds );
 	Cvar_RegisterVariable( &vr_melee_hit_sounds );
@@ -1524,6 +1560,34 @@ static qboolean IN_VRMeleeAssist( float rel, float pitch, float *orel, float *op
 // (which it makes 0.3 s late) is brought forward
 static void IN_VRSwingFire( qboolean left )
 {
+	// the weapon touched something: the game's hit looks from just before that point along the swing, so it hits exactly that
+	{
+		convar_t *c = left ? &vr_in_lswing_contact : &vr_in_swing_contact;
+		float cx = left ? vr_in_lswing_cx.value : vr_in_swing_cx.value, cy = left ? vr_in_lswing_cy.value : vr_in_swing_cy.value;
+		float cz = left ? vr_in_lswing_cz.value : vr_in_swing_cz.value, dx = left ? vr_in_lswing_dx.value : vr_in_swing_dx.value;
+		float dy = left ? vr_in_lswing_dy.value : vr_in_swing_dy.value, dz = left ? vr_in_lswing_dz.value : vr_in_swing_dz.value;
+
+		vr_melee_override = false;
+
+		if( vr_melee_origin.value && c->value > 0.5f )
+		{
+			vec3_t d = { dx, dy, dz };
+			float dl = sqrt( dx * dx + dy * dy + dz * dz );
+
+			if( dl > 0.5f )
+			{
+				VectorScale( d, 1.0f / dl, d );
+				vr_melee_eye[0] = cx - d[0] * 4.0f;
+				vr_melee_eye[1] = cy - d[1] * 4.0f;
+				vr_melee_eye[2] = cz - d[2] * 4.0f;
+				vr_melee_yaw = RAD2DEG( atan2( d[1], d[0] ));
+				vr_melee_pitch = -RAD2DEG( atan2( d[2], sqrt( d[0] * d[0] + d[1] * d[1] )));
+				vr_melee_override_until = host.realtime + 0.6;
+				vr_melee_override = true;
+			}
+		}
+	}
+
 	if( left )
 	{
 		vr_lswing_until = host.realtime + 0.3;

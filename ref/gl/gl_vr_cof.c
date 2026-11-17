@@ -755,12 +755,6 @@ qboolean VR_CofDualModel( char *out, int size )
 		return true;
 	}
 
-	if( last_name[0] && now >= last_seen && now - last_seen < vr_dual_grace.value && *cof.dualmode == 6 )
-	{
-		Q_strncpy( out, last_name, size );
-		return true;
-	}
-
 	return false;
 #else
 	return false;
@@ -999,9 +993,9 @@ qboolean VR_CofDrawDual( const float *origin, const float *pitch_yaw_roll )
 	qboolean wrote = false;
 #if defined( _WIN32 )
 	float so[3], sa[3], ea[6], eb[6];
-	int sflag, smode;
+	int sflag;
 
-	if( !cof.ok || !cof.dual_ok || ( *cof.dualmode != 3 && *cof.dualmode != 6 ))
+	if( !cof.ok || !cof.dual_ok || *cof.dualmode != 3 )
 		return false;
 
 	memcpy( so, cof.vorigin, sizeof( so ));
@@ -1011,13 +1005,6 @@ qboolean VR_CofDrawDual( const float *origin, const float *pitch_yaw_roll )
 	memcpy( cof.vorigin, origin, sizeof( so ));
 	memcpy( cof.vangles, pitch_yaw_roll, sizeof( sa ));
 	*cof.secondary = 1;
-
-	// while the game shows something else in its secondary view for a moment (a door being used), the left weapon is
-	// still drawn: the mode is 3 only for this draw. Mode 0 is the night vision goggles, which is never replaced
-	smode = *cof.dualmode;
-
-	if( smode == 6 )
-		*cof.dualmode = 3;
 
 	if( cof.ent_ok )
 	{
@@ -1040,7 +1027,6 @@ qboolean VR_CofDrawDual( const float *origin, const float *pitch_yaw_roll )
 		memcpy( cof.ent_b, eb, sizeof( eb ));
 	}
 
-	*cof.dualmode = smode;
 	*cof.secondary = sflag;
 	memcpy( cof.vorigin, so, sizeof( so ));
 	memcpy( cof.vangles, sa, sizeof( sa ));

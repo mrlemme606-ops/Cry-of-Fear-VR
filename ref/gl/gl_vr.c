@@ -154,6 +154,8 @@ static CVAR_DEFINE_AUTO( vr_sym_proj, "1", FCVAR_ARCHIVE, "1 = draw each eye wit
 static CVAR_DEFINE_AUTO( vr_flip_vfov, "1", FCVAR_ARCHIVE, "diagnostic for vr_sym_proj 0 only (it has no effect with vr_sym_proj 1): swap the up and down field of view. Try 1 if what is drawn sits a little too low or high compared to the menu pointer" );
 static CVAR_DEFINE_AUTO( vr_fov_scale, "1.0", 0, "diagnostic: scale the rendered field of view tangents (1.0 = exact)" );
 static CVAR_DEFINE_AUTO( vr_crouch_height, "0.30", FCVAR_ARCHIVE, "meters below your recentered height that count as physically crouching (you stand up again at 60% of this)" );
+static CVAR_DEFINE_AUTO( vr_crouch_follow, "1", FCVAR_ARCHIVE, "1 = the view height given back when you crouch follows the game's own crouch curve exactly, so you see none of its crouch animation, only your real head" );
+static CVAR_DEFINE_AUTO( vr_crouch_full, "34", FCVAR_ARCHIVE, "how far the game lowers its view for a crouch (units), until it has been measured" );
 static CVAR_DEFINE_AUTO( vr_crouch_comp, "28", FCVAR_ARCHIVE, "units the view is given back when you crouch (the game lowers it too, so it is not counted twice). 0 = measured automatically (experimental)" );
 static CVAR_DEFINE_AUTO( vr_nofreeze_models, "", 0, "weapons that are never held in the idle pose (their own animation is used): part of the file name, + between names" );
 static CVAR_DEFINE_AUTO( vr_vm_rot_local, "1", FCVAR_ARCHIVE, "1 = the weapon's pitch/yaw/roll turn in the hand's own axes. 0 = the old way (added to world angles)" );
@@ -542,6 +544,8 @@ void VR_InitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_testscene );
 	gEngfuncs.Cvar_RegisterVariable( &vr_crouch_height );
 	gEngfuncs.Cvar_RegisterVariable( &vr_crouch_comp );
+	gEngfuncs.Cvar_RegisterVariable( &vr_crouch_follow );
+	gEngfuncs.Cvar_RegisterVariable( &vr_crouch_full );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hide_crosshair );
 	gEngfuncs.Cvar_RegisterVariable( &vr_sky_dome );
 	gEngfuncs.Cvar_RegisterVariable( &vr_roomscale );
@@ -998,16 +1002,39 @@ static qboolean VR_FindMeleeTarget( const vec3_t from, const vec3_t to, vec3_t c
 	return found;
 }
 
+static void VR_PublishContact( int hand, qboolean contact, const vec3_t point, const vec3_t dir )
+{
+	static const char *names[2][7] =
+	{
+		{ "vr_in_lswing_contact", "vr_in_lswing_cx", "vr_in_lswing_cy", "vr_in_lswing_cz", "vr_in_lswing_dx", "vr_in_lswing_dy", "vr_in_lswing_dz" },
+		{ "vr_in_swing_contact", "vr_in_swing_cx", "vr_in_swing_cy", "vr_in_swing_cz", "vr_in_swing_dx", "vr_in_swing_dy", "vr_in_swing_dz" }
+	};
+	const char **n = names[hand ? 1 : 0];
+
+	gEngfuncs.Cvar_SetValue( n[0], contact ? 1.0f : 0.0f );
+
+	if( !contact )
+		return;
+
+	gEngfuncs.Cvar_SetValue( n[1], point[0] );
+	gEngfuncs.Cvar_SetValue( n[2], point[1] );
+	gEngfuncs.Cvar_SetValue( n[3], point[2] );
+	gEngfuncs.Cvar_SetValue( n[4], dir[0] );
+	gEngfuncs.Cvar_SetValue( n[5], dir[1] );
+	gEngfuncs.Cvar_SetValue( n[6], dir[2] );
+}
+
 static float VR_SwingHand( int hand, const ref_viewpass_t *game, const vec3_t eye, float d, const char *cv_pitch, const char *cv_yaw, const char *cv_hit )
 {
 	uint32_t dev = VR_InputGetDevice( hand );
 	vec3_t tmp, dir, tip, target;
 	float speed = 0.0f, pitch, yaw;
-	qboolean hit = false;
+	qboolean hit = false, contact_published = false;
 
 	if( !vr.hand[hand].valid || dev >= VR_MAX_DEVICES || !vr.poses[dev].bPoseIsValid )
 	{
 		gEngfuncs.Cvar_SetValue( cv_hit, 0.0f );
+		VR_PublishContact( hand, false, vec3_origin, vec3_origin );
 		return 0.0f;
 	}
 
@@ -1066,9 +1093,14 @@ static float VR_SwingHand( int hand, const ref_viewpass_t *game, const vec3_t ey
 
 					if( sl > 0.5f && VR_TraceRay( s0, sd, sl, eye, target ))
 					{
+						vec3_t contact;
+
 						VectorScale( sd, 1.0f / sl, sd );
+						VectorCopy( target, contact );
 						VectorMA( target, 3.0f, sd, target );
 						hit = true;
+						VR_PublishContact( hand, true, contact, sd );
+						contact_published = true;
 					}
 					else
 						VectorMA( tip, vr_melee_lead.value, dir, target );
@@ -1088,6 +1120,9 @@ static float VR_SwingHand( int hand, const ref_viewpass_t *game, const vec3_t ey
 			gEngfuncs.Cvar_SetValue( cv_yaw, yaw );
 		}
 	}
+
+	if( !contact_published )
+		VR_PublishContact( hand, false, tip, tip );
 
 	gEngfuncs.Cvar_SetValue( cv_hit, hit ? 1.0f : 0.0f );
 	return speed;
@@ -3558,6 +3593,42 @@ qboolean VR_BeginMainPass( const ref_viewpass_t *game )
 			{
 				target = crouch ? vr_crouch_comp.value : 0.0f;
 				step = vr_crouch_comp.value * bound( 0.001f, (float)gp_host->frametime, 0.1f ) / 0.35f;
+
+				// The game lowers and raises its view along its own curve. The amount given back follows that curve exactly
+				// (the full amount is vr_crouch_comp, the curve is the measured drop of the game's view), so what is left is
+				// only your real head and nothing of the game's crouch animation. While you stand up in real life the game is
+				// still low for a moment: the amount keeps following it down.
+				if( vr_crouch_follow.value && cv_drop )
+				{
+					static qboolean episode;
+					static float full, last_drop, stable;
+					float dt = bound( 0.001f, (float)gp_host->frametime, 0.1f ), fullv = full > 8.0f ? full : vr_crouch_full.value;
+
+					// the full drop of the game's view is learned when it holds still
+					if( drop > 8.0f && fabs( drop - last_drop ) < 0.05f )
+					{
+						stable += dt;
+
+						if( stable > 0.25f )
+							full = drop;
+					}
+					else
+						stable = 0.0f;
+
+					last_drop = drop;
+
+					if( crouch )
+						episode = true;
+					else if( drop < 0.5f )
+						episode = false;
+
+					target = episode ? vr_crouch_comp.value * bound( 0.0f, drop / fullv, 1.0f ) : 0.0f;
+					vr.crouch_comp = target;
+					step = 0.0f;
+
+					// nothing else to do for the amount: it is set, skip the ramp below
+					goto crouch_done;
+				}
 			}
 
 			if( step > 0.0f )
@@ -3566,6 +3637,9 @@ qboolean VR_BeginMainPass( const ref_viewpass_t *game )
 				vr.crouch_comp = target;	// while you crouch, and until the game has stood up again
 			else
 				vr.crouch_comp = 0.0f;
+
+crouch_done:
+			;
 		}
 
 		while( rel > 180.0f ) rel -= 360.0f;

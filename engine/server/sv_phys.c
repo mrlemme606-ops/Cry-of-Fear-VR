@@ -235,6 +235,10 @@ Returns false if the entity removed itself.
 #if !XASH_DEDICATED
 extern double vr_melee_window_until;	// in_vr.c: a real VR swing has just begun
 extern convar_t vr_melee_instant;
+extern qboolean vr_melee_override;
+extern vec3_t vr_melee_eye;
+extern float vr_melee_pitch, vr_melee_yaw;
+extern double vr_melee_override_until;
 
 /*
 =============
@@ -313,11 +317,48 @@ in a frame.  Not used for pushmove objects, because they must be exact.
 Returns false if the entity removed itself.
 =============
 */
+static qboolean SV_PlayerRunThinkInternal( edict_t *ent, float frametime, double time );
+
 qboolean SV_PlayerRunThink( edict_t *ent, float frametime, double time )
 {
 #if !XASH_DEDICATED
 	SV_VRMeleeInstant( ent );
+
+	// The hit of a melee swing is made in a think of the player, which looks from the player's eye along the view angles.
+	// While that think runs the eye is the point where the weapon touched something and the view is the swing direction
+	// (the game library of Lambda1VR does the same with the position of the controller)
+	if( vr_melee_override && NUM_FOR_EDICT( ent ) == 1 )
+	{
+		if( host.realtime > vr_melee_override_until )
+			vr_melee_override = false;
+		else if( ent->v.nextthink > 0.0 && ent->v.nextthink <= time + frametime )
+		{
+			vec3_t save_ofs, save_ang;
+			qboolean ret;
+
+			VectorCopy( ent->v.view_ofs, save_ofs );
+			VectorCopy( ent->v.v_angle, save_ang );
+
+			VectorSubtract( vr_melee_eye, ent->v.origin, ent->v.view_ofs );
+			ent->v.v_angle[PITCH] = vr_melee_pitch;
+			ent->v.v_angle[YAW] = vr_melee_yaw;
+			ent->v.v_angle[ROLL] = 0.0f;
+
+			ret = SV_PlayerRunThinkInternal( ent, frametime, time );
+
+			VectorCopy( save_ofs, ent->v.view_ofs );
+			VectorCopy( save_ang, ent->v.v_angle );
+			vr_melee_override = false;
+			return ret;
+		}
+	}
 #endif
+
+	return SV_PlayerRunThinkInternal( ent, frametime, time );
+}
+
+static qboolean SV_PlayerRunThinkInternal( edict_t *ent, float frametime, double time )
+{
 
 	if( svgame.physFuncs.SV_PlayerThink )
 		return svgame.physFuncs.SV_PlayerThink( ent, frametime, time );
