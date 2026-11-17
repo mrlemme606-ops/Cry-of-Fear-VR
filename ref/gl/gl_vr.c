@@ -267,7 +267,7 @@ static CVAR_DEFINE_AUTO( vr_dual_clip_tex, "", FCVAR_ARCHIVE, "extra texture nam
 static CVAR_DEFINE_AUTO( vr_dual_anim_hold, "idle+draw+holster+equip+deploy+reload+pull+hide+show+inspect+fidget+lean+sprint+walk+run", FCVAR_ARCHIVE, "animation names (part of the name, separated by +) that a gun on the left hand does NOT play" );
 static CVAR_DEFINE_AUTO( vr_dual_anim_play, "shoot+fire+shot", FCVAR_ARCHIVE, "parts of the animation names of the left weapon that are allowed to play. Everything else (idle, draw, melee, reload...) holds the first idle pose" );
 static CVAR_DEFINE_AUTO( vr_dual_builtin, "1", FCVAR_ARCHIVE, "1 = the left weapon of a dual wield is drawn by the engine's own studio renderer (it then turns with your hand). 0 = the game's renderer" );
-static CVAR_DEFINE_AUTO( vr_melee_surface, "1", FCVAR_ARCHIVE, "1 = a swing with no creature on its path is aimed at the surface it runs into (boards, crates, doors)" );
+static CVAR_DEFINE_AUTO( vr_melee_slack, "8", FCVAR_ARCHIVE, "how far ahead of the weapon tip (units) something counts as touched by a swing" );
 static CVAR_DEFINE_AUTO( vr_melee_aim, "1", FCVAR_ARCHIVE, "1 = a swing is aimed at where the tip of the weapon is. 0 = the old way, along the direction of the swing" );
 static CVAR_DEFINE_AUTO( vr_melee_radius, "10", FCVAR_ARCHIVE, "how far (game units) from the path of the weapon a creature still counts as hit by the swing" );
 static CVAR_DEFINE_AUTO( vr_melee_predict, "70", FCVAR_ARCHIVE, "how far (game units) along the swing the search for a creature goes" );
@@ -503,7 +503,7 @@ void VR_InitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_lh_cut_bone );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_muzzle );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_own );
-	gEngfuncs.Cvar_RegisterVariable( &vr_melee_surface );
+	gEngfuncs.Cvar_RegisterVariable( &vr_melee_slack );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hand_reach );
 	gEngfuncs.Cvar_RegisterVariable( &vr_anim_play );
 	gEngfuncs.Cvar_RegisterVariable( &vr_anim_mask );
@@ -1034,17 +1034,48 @@ static float VR_SwingHand( int hand, const ref_viewpass_t *game, const vec3_t ey
 				VectorMA( tip, -8.0f, dir, a );
 				VectorMA( tip, vr_melee_predict.value, dir, b );
 
-				if( !VR_FindMeleeTarget( a, b, target ))
+				if( VR_FindMeleeTarget( a, b, target ))
 				{
-					// no creature on the path: aim at what the swing runs into (planks, doors, walls). Only aiming a few units
-					// ahead of the tip made swings at boards and crates miss: the game's own hit comes from your eye
-					if( vr_melee_surface.value && VR_TraceRay( a, dir, vr_melee_reach.value + 8.0f, eye, target ))
-						VectorMA( target, 3.0f, dir, target );
+					hit = true;
+				}
+				else
+				{
+					// Contact: the tip of the weapon, from where it was a frame ago to a little ahead of where it is now, is
+					// traced against the world and everything solid (boards, crates, doors, walls, bodies). If it touches
+					// something, that is what the swing is aimed at, exactly. If it touches nothing, the swing hits nothing
+					static vec3_t prev_tip[2];
+					static qboolean prev_ok[2];
+					vec3_t s0, e0, sd;
+					float sl;
+
+					VectorMA( tip, vr_melee_slack.value, dir, e0 );
+					VectorCopy( prev_ok[hand] ? prev_tip[hand] : tip, s0 );
+
+					if( !prev_ok[hand] )
+						VectorMA( tip, -8.0f, dir, s0 );
+
+					VectorSubtract( e0, s0, sd );
+					sl = VectorLength( sd );
+
+					if( sl > 120.0f )
+					{
+						VectorMA( tip, -8.0f, dir, s0 );
+						VectorSubtract( e0, s0, sd );
+						sl = VectorLength( sd );
+					}
+
+					if( sl > 0.5f && VR_TraceRay( s0, sd, sl, eye, target ))
+					{
+						VectorScale( sd, 1.0f / sl, sd );
+						VectorMA( target, 3.0f, sd, target );
+						hit = true;
+					}
 					else
 						VectorMA( tip, vr_melee_lead.value, dir, target );
-				}
 
-				hit = false;
+					VectorCopy( tip, prev_tip[hand] );
+					prev_ok[hand] = true;
+				}
 			}
 			else
 			{
@@ -2727,11 +2758,32 @@ void VR_DrawDualWeapon( void )
 	float vang[3], scale;
 	qboolean wrote;
 
-	if( !vr_dual.value || !vr.in_eye_pass || !VR_CofDualModel( model, sizeof( model )))
+	static qboolean was_active;
+	static double reload_at;
+	double now = gp_host ? gp_host->realtime : 0.0;
+
+	if( !vr_dual.value || !vr.in_eye_pass )
 		return;
 
-	if( Q_stricmp( vr_dual_model, model ))
+	if( !VR_CofDualModel( model, sizeof( model )))
+	{
+		was_active = false;
+		return;
+	}
+
+	// the settings of the left weapon are loaded every time a dual wield begins (also when it is already running after a save
+	// was loaded), and once more a moment later, in case something else set the values in between
+	if( !was_active || Q_stricmp( vr_dual_model, model ))
+	{
+		was_active = true;
 		VR_DualLoadSettings( model );
+		reload_at = now + 1.5;
+	}
+	else if( reload_at > 0.0 && now >= reload_at )
+	{
+		reload_at = 0.0;
+		VR_DualLoadSettings( model );
+	}
 
 	if( !VR_GetDualPose( model, origin, vang, &scale ))
 		return;

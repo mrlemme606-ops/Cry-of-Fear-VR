@@ -46,6 +46,7 @@ double vr_melee_window_until;	// read by the server (sv_phys.c): until then a me
 static CVAR_DEFINE_AUTO( vr_swing_sound, "1", FCVAR_ARCHIVE, "1 = a real swing plays the weapon's swing sound at once, and the game's own late swing sound is muted" );
 static CVAR_DEFINE_AUTO( vr_swing_sounds, "swing+miss+slash+whoosh+woosh+whip", FCVAR_ARCHIVE, "name parts of the game's swing sounds (separated by +)" );
 static CVAR_DEFINE_AUTO( vr_melee_hit_sounds, "hitbody+melee_hit", FCVAR_ARCHIVE, "name parts of the sounds of a hit that hurts someone (separated by +). The hand only vibrates when one plays right after a swing. vr_sound_debug 2 lists the sounds after a swing" );
+static CVAR_DEFINE_AUTO( vr_melee_defer, "1", FCVAR_ARCHIVE, "1 = a swing only attacks when the weapon touches something (or a creature is in its way), aimed at the contact point. 0 = every swing attacks at once" );
 static CVAR_DEFINE_AUTO( vr_melee_hold, "0.12", FCVAR_ARCHIVE, "seconds the attack button is held for a real swing" );
 static CVAR_DEFINE_AUTO( vr_in_qs_pick, "0", 0, "(internal) the quick slot the renderer says the hand is over" );
 static CVAR_DEFINE_AUTO( vr_in_qs_on, "0", 0, "(internal) the quick slot selector is open" );
@@ -135,6 +136,7 @@ static CVAR_DEFINE_AUTO( vr_melee_cooldown, "0.3", FCVAR_ARCHIVE, "seconds betwe
 static CVAR_DEFINE_AUTO( vr_key_swing, "mouse1", FCVAR_ARCHIVE, "key pressed when you swing a melee weapon" );
 static CVAR_DEFINE_AUTO( vr_key_whip, "mouse2", FCVAR_ARCHIVE, "key pressed when you swing a gun (pistol whip). empty = nothing" );
 static CVAR_DEFINE_AUTO( vr_key_reload, "r", FCVAR_ARCHIVE, "key pressed for you when a manual reload is finished (the game then does the actual reload)" );
+static CVAR_DEFINE_AUTO( vr_move_snap, "2", FCVAR_ARCHIVE, "how quickly your walking direction follows the stick. The game's acceleration (10) and friction (4) are both multiplied by this, so top speed and crouch speed stay the same but turns of direction are faster. 1 = the game's own values" );
 static CVAR_DEFINE_AUTO( vr_move_debug, "0", 0, "1 = print the walking numbers 4 times a second while the left stick is pushed (stick, command, real speed, the game's speed limit)" );
 static CVAR_DEFINE_AUTO( vr_debug_move, "0", 0, "print the player's movement type when it changes (helps find where analog movement fails)" );
 
@@ -186,6 +188,8 @@ static vec3_t vr_qs_start;
 extern void S_VRSwingStart( int weapon, int hand );
 static int vr_cur_weapon = -1;
 static double vr_swing_hold, vr_lswing_hold;
+static double vr_swing_pending_until, vr_lswing_pending_until;
+static qboolean vr_swing_pending, vr_lswing_pending;
 static double vr_move_dbg_until;
 static float vr_qs_yaw;	// the way the hand pointed when the selector opened (radians): 1 2 3 run from its left to its right
 static double vr_a_since;
@@ -606,6 +610,7 @@ void IN_VRInit( void )
 	Cvar_RegisterVariable( &vr_in_ui_lhit );
 	Cvar_RegisterVariable( &vr_in_ui_lkbd );
 	Cvar_RegisterVariable( &vr_melee_instant );
+	Cvar_RegisterVariable( &vr_melee_defer );
 	Cvar_RegisterVariable( &vr_swing_sound );
 	Cvar_RegisterVariable( &vr_swing_sounds );
 	Cvar_RegisterVariable( &vr_melee_hit_sounds );
@@ -693,6 +698,7 @@ void IN_VRInit( void )
 	Cvar_RegisterVariable( &vr_move_digital_ents );
 	Cvar_RegisterVariable( &vr_debug_move );
 	Cvar_RegisterVariable( &vr_move_debug );
+	Cvar_RegisterVariable( &vr_move_snap );
 
 	for( i = 0; i < VRB_COUNT; i++ )
 		Cvar_RegisterVariable( vr_key_cvars[i] );
@@ -1514,6 +1520,33 @@ static qboolean IN_VRMeleeAssist( float rel, float pitch, float *orel, float *op
 	return true;
 }
 
+// the attack of a swing: the aim along the swing is taken now, the attack key is sent for a moment, and the hit of the game
+// (which it makes 0.3 s late) is brought forward
+static void IN_VRSwingFire( qboolean left )
+{
+	if( left )
+	{
+		vr_lswing_until = host.realtime + 0.3;
+		vr_lswing_yaw = vr_in_lswing_yaw.value;
+		vr_lswing_pitch = vr_in_lswing_pitch.value;
+		vr_lswing_frames = 3;
+		vr_lswing_hold = host.realtime + vr_melee_hold.value;
+		vr_melee_window_until = host.realtime + 0.45;
+		return;
+	}
+
+	vr_swing_until = host.realtime + 0.3;
+	vr_swing_yaw = vr_in_swing_yaw.value;
+	vr_swing_pitch = vr_in_swing_pitch.value;
+	vr_swing_frames = 3;
+	vr_swing_hold = host.realtime + vr_melee_hold.value;
+	vr_melee_window_until = host.realtime + 0.45;
+
+	// a gun being whipped holds still on screen for a moment
+	if( vr_swing_whip && !vr_swing_fist )
+		vr_whip_until = host.realtime + 0.7;
+}
+
 void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 {
 	float yaw = 0.0f;
@@ -1608,6 +1641,27 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 			if(( cv = Cvar_FindVar( "cl_noiseeffect" )) != NULL ) Cvar_DirectSetValue( cv, 0.0f );
 			if(( cv = Cvar_FindVar( "gl_screenblur" )) != NULL ) Cvar_DirectSetValue( cv, 0.0f );
 		}
+
+		// walking: acceleration and friction are scaled together (see vr_move_snap), on every map and when the setting changes
+		{
+			static float snap_done = -1.0f;
+			static char snap_map[64];
+
+			if( snap_done != vr_move_snap.value || Q_strcmp( snap_map, clgame.mapname ))
+			{
+				convar_t *acc = Cvar_FindVar( "sv_accelerate" ), *fric = Cvar_FindVar( "sv_friction" );
+				float k = bound( 1.0f, vr_move_snap.value, 4.0f );
+
+				if( acc && fric )
+				{
+					Cvar_DirectSetValue( acc, 10.0f * k );
+					Cvar_DirectSetValue( fric, 4.0f * k );
+				}
+
+				snap_done = vr_move_snap.value;
+				Q_strncpy( snap_map, clgame.mapname, sizeof( snap_map ));
+			}
+		}
 	}
 
 	if( vr_in_active.value <= 0.0f )
@@ -1664,41 +1718,72 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 		if( in_game && vr_melee_enable.value && vr_in_noswing.value < 0.5f && vr_in_hand_valid.value > 0.5f && vr_swing_armed
 			&& right_ok && vr_in_hand_speed.value > thr && host.realtime >= vr_melee_next )
 		{
+			float ar, ap;
+
 			vr_melee_next = host.realtime + vr_melee_cooldown.value;
-			vr_swing_until = host.realtime + 0.3;
-			vr_swing_yaw = vr_in_swing_yaw.value;
-			vr_swing_pitch = vr_in_swing_pitch.value;
-			vr_swing_frames = 3;
 			vr_swing_whip = vr_in_melee.value < 0.5f;
 			vr_swing_fist = vr_in_fists.value > 0.5f;
 			vr_swing_armed = false;
 			vr_lock_yaw = cl.viewangles[YAW];
 			vr_lock_until = host.realtime + 0.8;
-
-			vr_swing_hold = host.realtime + vr_melee_hold.value;
-			vr_melee_window_until = host.realtime + 0.45;
 			S_VRSwingStart( vr_cur_weapon, 1 );
 
-			// a gun being whipped holds still on screen for a moment
-			if( vr_swing_whip && !vr_swing_fist )
-				vr_whip_until = host.realtime + 0.7;
+			// the attack itself happens when the weapon touches something (or a creature is on its way), not when the
+			// hand starts to move: then the hand is still far from what it swings at
+			if( !vr_melee_defer.value || vr_in_swing_hit.value > 0.5f || IN_VRMeleeAssist( vr_in_swing_yaw.value, vr_in_swing_pitch.value, &ar, &ap ))
+				IN_VRSwingFire( false );
+			else
+			{
+				vr_swing_pending = true;
+				vr_swing_pending_until = host.realtime + 0.4;
+			}
 		}
 
 		if( in_game && vr_melee_enable.value && vr_in_noswing.value < 0.5f && left_ok && vr_lswing_armed
 			&& vr_in_lhand_speed.value > thr && host.realtime >= vr_lmelee_next )
 		{
+			float ar, ap;
+
 			vr_lmelee_next = host.realtime + vr_melee_cooldown.value;
-			vr_lswing_until = host.realtime + 0.3;
-			vr_lswing_yaw = vr_in_lswing_yaw.value;
-			vr_lswing_pitch = vr_in_lswing_pitch.value;
-			vr_lswing_frames = 3;
 			vr_lswing_armed = false;
 			vr_lock_yaw = cl.viewangles[YAW];
 			vr_lock_until = host.realtime + 0.8;
-
-			vr_lswing_hold = host.realtime + vr_melee_hold.value;
-			vr_melee_window_until = host.realtime + 0.45;
 			S_VRSwingStart( vr_cur_weapon, 0 );
+
+			if( !vr_melee_defer.value || vr_in_lswing_hit.value > 0.5f || IN_VRMeleeAssist( vr_in_lswing_yaw.value, vr_in_lswing_pitch.value, &ar, &ap ))
+				IN_VRSwingFire( true );
+			else
+			{
+				vr_lswing_pending = true;
+				vr_lswing_pending_until = host.realtime + 0.4;
+			}
+		}
+
+		// a swing that is waiting: it attacks the moment the weapon touches something, and is dropped when the hand slows down
+		if( vr_swing_pending )
+		{
+			float ar, ap;
+
+			if( !in_game || vr_swing_armed || host.realtime >= vr_swing_pending_until )
+				vr_swing_pending = false;
+			else if( vr_in_swing_hit.value > 0.5f || IN_VRMeleeAssist( vr_in_swing_yaw.value, vr_in_swing_pitch.value, &ar, &ap ))
+			{
+				vr_swing_pending = false;
+				IN_VRSwingFire( false );
+			}
+		}
+
+		if( vr_lswing_pending )
+		{
+			float ar, ap;
+
+			if( !in_game || vr_lswing_armed || host.realtime >= vr_lswing_pending_until )
+				vr_lswing_pending = false;
+			else if( vr_in_lswing_hit.value > 0.5f || IN_VRMeleeAssist( vr_in_lswing_yaw.value, vr_in_lswing_pitch.value, &ar, &ap ))
+			{
+				vr_lswing_pending = false;
+				IN_VRSwingFire( true );
+			}
 		}
 	}
 

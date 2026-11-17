@@ -45,7 +45,7 @@ static CVAR_DEFINE_AUTO( vr_cof_watersize, "1", FCVAR_ARCHIVE, "1 = tell the gam
 static CVAR_DEFINE_AUTO( vr_hide_death_arm, "1", FCVAR_ARCHIVE, "1 = the arm that falls flat on the game over screen is not drawn" );
 static CVAR_DEFINE_AUTO( vr_light_life, "1", FCVAR_ARCHIVE, "lights of the game that live longer than this many seconds are map lights and are not moved to your hand (0 = move all)" );
 static CVAR_DEFINE_AUTO( vr_dual_dbg, "0", 0, "1 = print when the game changes the dual wield mode (finds why the left weapon vanishes at doors)" );
-static CVAR_DEFINE_AUTO( vr_dual_grace, "8", FCVAR_ARCHIVE, "seconds the left weapon of a dual wield stays drawn when the game hides it for a moment (using a door)" );
+static CVAR_DEFINE_AUTO( vr_dual_grace, "4", FCVAR_ARCHIVE, "seconds the left weapon of a dual wield stays drawn when the game hides it for a moment (using a door)" );
 static CVAR_DEFINE_AUTO( vr_dual_idle_list, "v_p345=idletest+v_glock=idle1+v_switchblade=p2idle+v_branch=idle_onehand", FCVAR_ARCHIVE, "the idle animation the game uses for each weapon in the left hand (learned while you play): weapon=animation+weapon=animation" );
 static CVAR_DEFINE_AUTO( vr_cof_watercomp, "1", FCVAR_ARCHIVE, "the game's own water reflection is a copy of the picture shifted 'up' on the screen. 1 = shift towards the real up of the world (stable when you tilt your head), -1 = the other way round, 0 = shift along the screen like the flat game" );
 static CVAR_DEFINE_AUTO( vr_cof_waterscale, "0.5", FCVAR_ARCHIVE, "how far the game's water reflection is shifted (1 = like the flat game)" );
@@ -755,7 +755,7 @@ qboolean VR_CofDualModel( char *out, int size )
 		return true;
 	}
 
-	if( last_name[0] && now >= last_seen && now - last_seen < vr_dual_grace.value && *cof.dualmode != 0 )
+	if( last_name[0] && now >= last_seen && now - last_seen < vr_dual_grace.value && *cof.dualmode == 6 )
 	{
 		Q_strncpy( out, last_name, size );
 		return true;
@@ -1001,7 +1001,7 @@ qboolean VR_CofDrawDual( const float *origin, const float *pitch_yaw_roll )
 	float so[3], sa[3], ea[6], eb[6];
 	int sflag, smode;
 
-	if( !cof.ok || !cof.dual_ok || *cof.dualmode == 0 )
+	if( !cof.ok || !cof.dual_ok || ( *cof.dualmode != 3 && *cof.dualmode != 6 ))
 		return false;
 
 	memcpy( so, cof.vorigin, sizeof( so ));
@@ -1016,7 +1016,7 @@ qboolean VR_CofDrawDual( const float *origin, const float *pitch_yaw_roll )
 	// still drawn: the mode is 3 only for this draw. Mode 0 is the night vision goggles, which is never replaced
 	smode = *cof.dualmode;
 
-	if( smode != 3 )
+	if( smode == 6 )
 		*cof.dualmode = 3;
 
 	if( cof.ent_ok )
