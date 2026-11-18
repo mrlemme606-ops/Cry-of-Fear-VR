@@ -3814,7 +3814,57 @@ void R_StudioForceBuiltin( qboolean on )
 R_StudioDrawModelInternal
 =================
 */
+static void R_StudioDrawModelInternal2( cl_entity_t *e, int flags );
+
 static void R_StudioDrawModelInternal( cl_entity_t *e, int flags )
+{
+	// The weapon in the left hand of a dual wield follows the same animation rules as the one in the right hand: only shooting
+	// and reloading play, everything else (draw, idle, the knife being opened...) holds the first idle pose. Without this the
+	// left weapon showed whatever animation the game had running, for instance after a save was loaded
+	if( R_StudioIsDualEntity( ) && e->model && e->model->type == mod_studio && FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
+	{
+		studiohdr_t *dh = (studiohdr_t *)gEngfuncs.Mod_Extradata( mod_studio, e->model );
+		int saved_seq = e->curstate.sequence;
+		float saved_frame = e->curstate.frame;
+		qboolean saved_interp = g_studio.interpolate;
+
+		if( dh && saved_seq >= 0 && saved_seq < dh->numseq )
+		{
+			mstudioseqdesc_t *cs = (mstudioseqdesc_t *)((byte *)dh + dh->seqindex) + saved_seq;
+
+			if( !VR_AnimPlays( saved_seq, cs->label ))
+			{
+				int idle = 0;
+
+				for( int i = 0; i < dh->numseq; i++ )
+				{
+					mstudioseqdesc_t *sd = (mstudioseqdesc_t *)((byte *)dh + dh->seqindex) + i;
+
+					if( VR_IsIdleLabel( sd->label ))
+					{
+						idle = i;
+						break;
+					}
+				}
+
+				e->curstate.sequence = idle;
+				e->curstate.frame = 0.0f;
+				g_studio.interpolate = false;
+			}
+		}
+
+		R_StudioDrawModelInternal2( e, flags );
+
+		e->curstate.sequence = saved_seq;
+		e->curstate.frame = saved_frame;
+		g_studio.interpolate = saved_interp;
+		return;
+	}
+
+	R_StudioDrawModelInternal2( e, flags );
+}
+
+static void R_StudioDrawModelInternal2( cl_entity_t *e, int flags )
 {
 	if( !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 	{

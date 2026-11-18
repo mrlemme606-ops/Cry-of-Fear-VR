@@ -61,6 +61,7 @@ static CVAR_DEFINE_AUTO( vr_in_lswing_dx, "0", 0, "(internal) swing contact data
 static CVAR_DEFINE_AUTO( vr_in_lswing_dy, "0", 0, "(internal) swing contact data" );
 static CVAR_DEFINE_AUTO( vr_in_lswing_dz, "0", 0, "(internal) swing contact data" );
 static CVAR_DEFINE_AUTO( vr_melee_origin, "1", FCVAR_ARCHIVE, "1 = the game's hit of a swing is traced from the point where the weapon touched something (like Lambda1VR does it), not from your eyes" );
+static CVAR_DEFINE_AUTO( vr_melee_debug, "0", 0, "1 = print what happens during a melee swing (contact, attack, the game's hit)" );
 static CVAR_DEFINE_AUTO( vr_melee_defer, "1", FCVAR_ARCHIVE, "1 = a swing only attacks when the weapon touches something (or a creature is in its way), aimed at the contact point. 0 = every swing attacks at once" );
 static CVAR_DEFINE_AUTO( vr_melee_hold, "0.12", FCVAR_ARCHIVE, "seconds the attack button is held for a real swing" );
 static CVAR_DEFINE_AUTO( vr_in_qs_pick, "0", 0, "(internal) the quick slot the renderer says the hand is over" );
@@ -151,7 +152,8 @@ static CVAR_DEFINE_AUTO( vr_melee_cooldown, "0.3", FCVAR_ARCHIVE, "seconds betwe
 static CVAR_DEFINE_AUTO( vr_key_swing, "mouse1", FCVAR_ARCHIVE, "key pressed when you swing a melee weapon" );
 static CVAR_DEFINE_AUTO( vr_key_whip, "mouse2", FCVAR_ARCHIVE, "key pressed when you swing a gun (pistol whip). empty = nothing" );
 static CVAR_DEFINE_AUTO( vr_key_reload, "r", FCVAR_ARCHIVE, "key pressed for you when a manual reload is finished (the game then does the actual reload)" );
-static CVAR_DEFINE_AUTO( vr_move_snap, "2", FCVAR_ARCHIVE, "how quickly your walking direction follows the stick. The game's acceleration (10) and friction (4) are both multiplied by this, so top speed and crouch speed stay the same but turns of direction are faster. 1 = the game's own values" );
+static CVAR_DEFINE_AUTO( vr_move_snap, "1.5", FCVAR_ARCHIVE, "how quickly your walking direction follows the stick. The game's acceleration (10) and friction (4) are both multiplied by this, so top speed and crouch speed stay the same but turns of direction are faster. 1 = the game's own values" );
+static CVAR_DEFINE_AUTO( vr_crouch_source, "1", FCVAR_ARCHIVE, "1 = when you crouch in real life the character crouches (hull, speed, low gaps, crouch jumps) but the game does not lower the view at all, so there is no crouch animation to see. 0 = the old way (the renderer gives the lowering back)" );
 static CVAR_DEFINE_AUTO( vr_move_debug, "0", 0, "1 = print the walking numbers 4 times a second while the left stick is pushed (stick, command, real speed, the game's speed limit)" );
 static CVAR_DEFINE_AUTO( vr_debug_move, "0", 0, "print the player's movement type when it changes (helps find where analog movement fails)" );
 
@@ -207,6 +209,7 @@ static double vr_swing_pending_until, vr_lswing_pending_until;
 
 // read by the server (sv_phys.c): for the hit of a swing, the player looks from this point along this direction
 qboolean vr_melee_override;
+qboolean vr_melee_dbg;
 vec3_t vr_melee_eye;
 float vr_melee_pitch, vr_melee_yaw;
 double vr_melee_override_until;
@@ -632,6 +635,7 @@ void IN_VRInit( void )
 	Cvar_RegisterVariable( &vr_in_ui_lkbd );
 	Cvar_RegisterVariable( &vr_melee_instant );
 	Cvar_RegisterVariable( &vr_melee_defer );
+	Cvar_RegisterVariable( &vr_melee_debug );
 	Cvar_RegisterVariable( &vr_melee_origin );
 	Cvar_RegisterVariable( &vr_in_swing_contact );
 	Cvar_RegisterVariable( &vr_in_swing_cx );
@@ -734,6 +738,7 @@ void IN_VRInit( void )
 	Cvar_RegisterVariable( &vr_move_digital_ents );
 	Cvar_RegisterVariable( &vr_debug_move );
 	Cvar_RegisterVariable( &vr_move_debug );
+	Cvar_RegisterVariable( &vr_crouch_source );
 	Cvar_RegisterVariable( &vr_move_snap );
 
 	for( i = 0; i < VRB_COUNT; i++ )
@@ -998,6 +1003,7 @@ static const vr_opt_t vr_opts[] =
 {
 	{ "MOVEMENT DIRECTION", "vr_move_ref", 0, 1, 1, 1, { "HEAD", "WAND", NULL } },
 	{ "TURNING", "vr_turn_mode", 0, 2, 1, 1, { "SNAP", "SMOOTH", "OFF" } },
+	{ "PHYSICAL CROUCHING", "vr_physical_crouch", 0, 1, 1, 2, { NULL, NULL, NULL } },
 	{ "SMOOTH TURN SPEED", "vr_smooth_speed", 30, 300, 15, 0, { NULL, NULL, NULL } },
 	{ "SNAP TURN ANGLE", "vr_snap_angle", 15, 90, 15, 0, { NULL, NULL, NULL } },
 	{ "SOUND VOLUME", "volume", 0, 1, 0.1f, 3, { NULL, NULL, NULL } },
@@ -1559,7 +1565,11 @@ static qboolean IN_VRMeleeAssist( float rel, float pitch, float *orel, float *op
 // the attack of a swing: the aim along the swing is taken now, the attack key is sent for a moment, and the hit of the game
 // (which it makes 0.3 s late) is brought forward
 static void IN_VRSwingFire( qboolean left )
-{
+{	vr_melee_dbg = vr_melee_debug.value > 0.5f;
+
+	if( vr_melee_dbg )
+		Con_Printf( "VR melee: attack sent (%s hand, contact %s)\n", left ? "left" : "right", ( left ? vr_in_lswing_contact.value : vr_in_swing_contact.value ) > 0.5f ? "yes" : "no, a creature was in range" );
+
 	// the weapon touched something: the game's hit looks from just before that point along the swing, so it hits exactly that
 	{
 		convar_t *c = left ? &vr_in_lswing_contact : &vr_in_swing_contact;
@@ -1609,6 +1619,24 @@ static void IN_VRSwingFire( qboolean left )
 	// a gun being whipped holds still on screen for a moment
 	if( vr_swing_whip && !vr_swing_fist )
 		vr_whip_until = host.realtime + 0.7;
+}
+
+// Crouching in real life: the game's character crouches, but its view must not move. The server and the client prediction call
+// this after the game's movement code has run. The eye stays at the same height above the feet as when standing, whatever the hull
+// does (the hull change moves the origin down, this puts the same amount into the view height). Only while the crouch was made
+// by your body (the episode lasts until the character has stood up again).
+qboolean vr_crouch_src_on, vr_crouch_episode;
+float vr_stand_view;
+
+void VR_CrouchFixView( playermove_t *pm )
+{
+	if( !vr_crouch_src_on || !vr_crouch_episode || vr_stand_view <= 0.0f || pm->usehull < 0 || pm->usehull > 1 )
+		return;
+
+	if( pm->onground != -1 )
+		pm->view_ofs[2] = vr_stand_view - pm->player_mins[0][2] + pm->player_mins[pm->usehull][2];
+	else
+		pm->view_ofs[2] = vr_stand_view;
 }
 
 void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
@@ -1829,7 +1857,12 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 			float ar, ap;
 
 			if( !in_game || vr_swing_armed || host.realtime >= vr_swing_pending_until )
+			{
+				if( vr_melee_debug.value > 0.5f )
+					Con_Printf( "VR melee: the swing touched nothing, so no attack was made\n" );
+
 				vr_swing_pending = false;
+			}
 			else if( vr_in_swing_hit.value > 0.5f || IN_VRMeleeAssist( vr_in_swing_yaw.value, vr_in_swing_pitch.value, &ar, &ap ))
 			{
 				vr_swing_pending = false;
@@ -2102,6 +2135,20 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 		// the standing height is only learned while the character is not ducking at all
 		if( !ducking )
 			stand_height = h;
+
+		// (see VR_CrouchFixView) the episode starts with a crouch of your body and ends when the character has stood up
+		vr_crouch_src_on = vr_crouch_source.value && Cvar_VariableValue( "vr_physical_crouch" ) > 0.5f;
+
+		if( !vr_crouch_src_on || vr_in_active.value <= 0.0f )
+			vr_crouch_episode = false;
+		else if( vr_in_crouch.value > 0.0f )
+			vr_crouch_episode = true;
+		else if( !ducking )
+			vr_crouch_episode = false;
+
+		// the standing view height of the character, learned only while standing and not in the episode
+		if( !ducking && !vr_crouch_episode )
+			vr_stand_view = clgame.pmove->view_ofs[2];
 
 		Cvar_DirectSetValue( &vr_in_duck_drop, ducking ? bound( 0.0f, stand_height - h, 60.0f ) : 0.0f );
 	}

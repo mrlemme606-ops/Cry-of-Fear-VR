@@ -1101,6 +1101,18 @@ static float VR_SwingHand( int hand, const ref_viewpass_t *game, const vec3_t ey
 						hit = true;
 						VR_PublishContact( hand, true, contact, sd );
 						contact_published = true;
+
+						if( gEngfuncs.pfnGetCvarFloat( "vr_melee_debug" ) > 0.5f )
+						{
+							static double next_print;
+
+							if( gp_host->realtime > next_print )
+							{
+								next_print = gp_host->realtime + 0.25;
+								gEngfuncs.Con_Printf( "VR melee: %s hand touched something (entity %d of the trace, at %.0f %.0f %.0f, swing speed %.0f)\n",
+									hand ? "right" : "left", vr_dbg_ent, contact[0], contact[1], contact[2], speed );
+							}
+						}
 					}
 					else
 						VectorMA( tip, vr_melee_lead.value, dir, target );
@@ -1597,6 +1609,13 @@ qboolean VR_GetViewModelAxes( vec3_t f, vec3_t l, vec3_t u )
 
 // the same axes, whatever the rotation mode is (the muzzle offset must not depend on how the weapon is drawn)
 // the game's own picture of the left weapon is only hidden while we draw one on the hand ourselves
+// the game's own picture of its left weapon (it sits in front of the body) is never wanted while VR is active, also when the
+// weapon is not drawn at the hand: for a moment after a weapon is switched, and after a save was loaded
+qboolean vr_dual_hide_any( void )
+{
+	return vr_dual.value && vr_dual_own.value;
+}
+
 qboolean vr_dual_hide_game_copy( void )
 {
 	char dualmodel[64];
@@ -1799,10 +1818,23 @@ void VR_ViewModelClip( qboolean on )
 	cy = DEG2RAD( vr_dual_pass ? vr_dual_cut_yaw.value : ( vr_left_pass ? vr_lh_cut_yaw.value : vr_vm_cut_yaw.value ));
 
 	// the cut plane faces along the hand, tilted by yaw (toward the left) and pitch (toward up)
-	VectorScale( vr.hand[hnd].fwd, cos( cy ), t );
-	VectorMA( t, sin( cy ), vr.hand[hnd].left, t );
-	VectorScale( t, cos( cp ), n );
-	VectorMA( n, sin( cp ), vr.hand[hnd].up, n );
+	{
+		vec3_t hf, hl, hu;
+
+		VectorCopy( vr.hand[hnd].fwd, hf );
+		VectorCopy( vr.hand[hnd].left, hl );
+		VectorCopy( vr.hand[hnd].up, hu );
+
+		// While the left hand grips the weapon, the weapon is turned by both hands and the arm turns with it. The cut then
+		// follows the weapon (its two-hand direction), not the controller, which can point anywhere meanwhile
+		if( hnd == 1 && !vr_left_pass && !vr_dual_pass && VR_TwoHandBasis( hf, hl, hu ))
+			;
+
+		VectorScale( hf, cos( cy ), t );
+		VectorMA( t, sin( cy ), hl, t );
+		VectorScale( t, cos( cp ), n );
+		VectorMA( n, sin( cp ), hu, n );
+	}
 	VectorMA( vr.hand[hnd].pos, -cut, n, c );
 
 	// the right hand's weapon: the plane sits on the animated wrist and runs along the arm, so the cut stays at the
@@ -2806,6 +2838,10 @@ void VR_DrawDualWeapon( void )
 		return;
 	}
 
+	// the left hand grips the weapon in the right hand (a shotgun, a rifle): there is no hand left for the other weapon
+	if( VR_TwoHandActive( ))
+		return;
+
 	// the settings of the left weapon are loaded every time a dual wield begins (also when it is already running after a save
 	// was loaded), and once more a moment later, in case something else set the values in between
 	if( !was_active || Q_stricmp( vr_dual_model, model ))
@@ -3587,6 +3623,14 @@ qboolean VR_BeginMainPass( const ref_viewpass_t *game )
 			drop = cv_drop ? cv_drop->value : 0.0f;
 			target = drop;
 			step = 0.0f;
+
+			// the engine keeps the game's view from moving at all while you crouch in real life (vr_crouch_source), so there is
+			// nothing to give back
+			if( gEngfuncs.pfnGetCvarFloat( "vr_crouch_source" ) > 0.5f )
+			{
+				vr.crouch_comp = 0.0f;
+				goto crouch_done;
+			}
 
 			// vr_crouch_comp > 0 forces a fixed amount instead (the old way)
 			if( vr_crouch_comp.value > 0.0f )

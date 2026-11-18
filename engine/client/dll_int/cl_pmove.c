@@ -16,6 +16,8 @@ GNU General Public License for more details.
 #include "common.h"
 #include "client.h"
 #include "const.h"
+
+extern void VR_CrouchFixView( playermove_t *pm );
 #include "cl_tent.h"
 #include "pm_local.h"
 #include "studio.h"
@@ -863,6 +865,7 @@ static const void CL_FinishPMove( const playermove_t *pmove, local_state_t *to )
 	cd->maxspeed = pmove->clientmaxspeed;
 	cd->deadflag = pmove->deadflag;
 	VectorCopy( pmove->velocity, cd->velocity );
+	VR_CrouchFixView( pmove );
 	VectorCopy( pmove->view_ofs, cd->view_ofs );
 	VectorCopy( pmove->origin, ps->origin );
 	VectorCopy( pmove->angles, ps->angles );

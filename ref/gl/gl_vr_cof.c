@@ -44,6 +44,7 @@ static CVAR_DEFINE_AUTO( vr_cof_depth, "0.8", 0, "far end of the depth range the
 static CVAR_DEFINE_AUTO( vr_cof_watersize, "1", FCVAR_ARCHIVE, "1 = tell the game's water effect the size of the eye picture (it copies the screen from the bottom left corner at the window size). Experimental" );
 static CVAR_DEFINE_AUTO( vr_hide_death_arm, "1", FCVAR_ARCHIVE, "1 = the arm that falls flat on the game over screen is not drawn" );
 static CVAR_DEFINE_AUTO( vr_light_life, "1", FCVAR_ARCHIVE, "lights of the game that live longer than this many seconds are map lights and are not moved to your hand (0 = move all)" );
+static CVAR_DEFINE_AUTO( vr_light_white, "1", FCVAR_ARCHIVE, "1 = the phone and flashlight always shine white (the game tints them yellow, green or red depending on what the beam hits)" );
 static CVAR_DEFINE_AUTO( vr_dual_dbg, "0", 0, "1 = print when the game changes the dual wield mode (finds why the left weapon vanishes at doors)" );
 static CVAR_DEFINE_AUTO( vr_dual_grace, "4", FCVAR_ARCHIVE, "seconds the left weapon of a dual wield stays drawn when the game hides it for a moment (using a door)" );
 static CVAR_DEFINE_AUTO( vr_dual_idle_list, "v_p345=idletest+v_glock=idle1+v_switchblade=p2idle+v_branch=idle_onehand", FCVAR_ARCHIVE, "the idle animation the game uses for each weapon in the left hand (learned while you play): weapon=animation+weapon=animation" );
@@ -391,6 +392,17 @@ static void COF_Relight( void )
 			continue;
 		}
 
+		// The game makes several lights for a held phone or flashlight depending on what its beams hit, each with its own tint
+		// (0.92 0.92 0.51 is a yellow one). Their colour is the three floats 4, 5 and 6. The phone and flashlight shine white:
+		// the same brightness, no tint
+		if( !hl.omni && vr_light_white.value && ( spot || l[3] == 60.0f || l[3] == 700.0f ))
+		{
+			float m = Q_max( l[4], Q_max( l[5], l[6] ));
+
+			if( m > 0.01f )
+				l[4] = l[5] = l[6] = m;
+		}
+
 		if( spot )
 		{
 			// phone, flashlight and weapon tacklights: their spotlight texture is gfx/flashlight.tga or flashlight2.tga
@@ -439,7 +451,7 @@ static void VR_CofLightDump_f( void )
 			continue;
 
 		n++;
-		gEngfuncs.Con_Printf( "light %d: origin %.0f %.0f %.0f radius %.0f ratio %.2f angles %.0f %.0f life %.2f key %.0f color %.2f %.2f texture '%s'\n", i, l[0], l[1], l[2], l[3], l[6], l[10], l[11], l[7] - now, l[9], l[4], l[5], (const char *)( l + 15 ));
+		gEngfuncs.Con_Printf( "light %d: origin %.0f %.0f %.0f radius %.0f color %.2f %.2f %.2f angles %.0f %.0f life %.2f key %.0f texture '%s'\n", i, l[0], l[1], l[2], l[3], l[4], l[5], l[6], l[10], l[11], l[7] - now, l[9], (const char *)( l + 15 ));
 	}
 
 	gEngfuncs.Con_Printf( "%d active lights, hand light %s\n", n, hl.valid ? ( hl.omni ? "omni" : "spot" ) : "none" );
@@ -1050,6 +1062,7 @@ void VR_CofInitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_idle_list );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_grace );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_dbg );
+	gEngfuncs.Cvar_RegisterVariable( &vr_light_white );
 	gEngfuncs.Cvar_RegisterVariable( &vr_light_life );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hide_death_arm );
 	gEngfuncs.Cvar_RegisterVariable( &vr_cof_watercomp );

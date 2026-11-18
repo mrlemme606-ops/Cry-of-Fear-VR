@@ -588,12 +588,20 @@ static void SV_SetupPMove( playermove_t *pmove, sv_client_t *cl, usercmd_t *ucmd
 	SV_AddLaddersToPmove( sv_areanodes, absmin, absmax );
 }
 
+#if !XASH_DEDICATED
+extern void VR_CrouchFixView( playermove_t *pm );
+#endif
+
 static void SV_FinishPMove( playermove_t *pmove, sv_client_t *cl )
 {
 	edict_t	*clent = cl->edict;
 
 	clent->v.teleport_time = pmove->waterjumptime;
 	VectorCopy( pmove->origin, clent->v.origin );
+#if !XASH_DEDICATED
+	if( NUM_FOR_EDICT( clent ) == 1 )
+		VR_CrouchFixView( pmove );
+#endif
 	VectorCopy( pmove->view_ofs, clent->v.view_ofs );
 	VectorCopy( pmove->velocity, clent->v.velocity );
 	VectorCopy( pmove->basevelocity, clent->v.basevelocity );

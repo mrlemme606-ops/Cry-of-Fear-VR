@@ -236,6 +236,7 @@ Returns false if the entity removed itself.
 extern double vr_melee_window_until;	// in_vr.c: a real VR swing has just begun
 extern convar_t vr_melee_instant;
 extern qboolean vr_melee_override;
+extern qboolean vr_melee_dbg;
 extern vec3_t vr_melee_eye;
 extern float vr_melee_pitch, vr_melee_yaw;
 extern double vr_melee_override_until;
@@ -343,6 +344,9 @@ qboolean SV_PlayerRunThink( edict_t *ent, float frametime, double time )
 			ent->v.v_angle[PITCH] = vr_melee_pitch;
 			ent->v.v_angle[YAW] = vr_melee_yaw;
 			ent->v.v_angle[ROLL] = 0.0f;
+
+			if( vr_melee_dbg )
+				Con_Printf( "VR melee: the game's hit was made from the point the weapon touched\n" );
 
 			ret = SV_PlayerRunThinkInternal( ent, frametime, time );
 
