@@ -156,7 +156,7 @@ static CVAR_DEFINE_AUTO( vr_fov_scale, "1.0", 0, "diagnostic: scale the rendered
 static CVAR_DEFINE_AUTO( vr_crouch_height, "0.30", FCVAR_ARCHIVE, "meters below your recentered height that count as physically crouching (you stand up again at 60% of this)" );
 static CVAR_DEFINE_AUTO( vr_crouch_follow, "1", FCVAR_ARCHIVE, "1 = the view height given back when you crouch follows the game's own crouch curve exactly, so you see none of its crouch animation, only your real head" );
 static CVAR_DEFINE_AUTO( vr_crouch_full, "34", FCVAR_ARCHIVE, "how far the game lowers its view for a crouch (units), until it has been measured" );
-static CVAR_DEFINE_AUTO( vr_crouch_comp, "28", FCVAR_ARCHIVE, "units the view is given back when you crouch (the game lowers it too, so it is not counted twice). 0 = measured automatically (experimental)" );
+static CVAR_DEFINE_AUTO( vr_crouch_comp, "0", FCVAR_ARCHIVE, "0 = when you crouch in real life the view is kept at standing height exactly (the engine measures how far the game lowers it and gives that back, so none of the game crouch animation is seen, but the character still crouches: low spaces, speed, crouch jumps). More than 0 = a fixed amount instead (the old way, 28 worked)" );
 static CVAR_DEFINE_AUTO( vr_nofreeze_models, "", 0, "weapons that are never held in the idle pose (their own animation is used): part of the file name, + between names" );
 static CVAR_DEFINE_AUTO( vr_vm_rot_local, "1", FCVAR_ARCHIVE, "1 = the weapon's pitch/yaw/roll turn in the hand's own axes. 0 = the old way (added to world angles)" );
 static CVAR_DEFINE_AUTO( vr_light_pitch, "0", 0, "tilt the spotlight up (+) or down (-) from where the controller points, degrees (saved per weapon)" );
