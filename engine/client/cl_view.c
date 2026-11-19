@@ -141,6 +141,18 @@ static void V_SetRefParams( ref_params_t *fd )
 	VectorCopy( cl.simorg, fd->simorg );
 
 	VectorCopy( cl.viewheight, fd->viewheight );
+
+	{
+		extern float VR_CrouchViewShift( void );
+		float shift = VR_CrouchViewShift();
+
+		if( shift != 0.0f )
+		{
+			fd->simorg[2] += shift;
+			fd->viewheight[2] -= shift;
+		}
+	}
+
 	fd->idealpitch = cl.local.idealpitch;
 
 	VectorCopy( cl.viewangles, fd->cl_viewangles );

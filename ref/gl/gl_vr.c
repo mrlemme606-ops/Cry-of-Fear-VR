@@ -153,7 +153,7 @@ static CVAR_DEFINE_AUTO( vr_positional, "1", 0, "0 = ignore head movement (rotat
 static CVAR_DEFINE_AUTO( vr_sym_proj, "1", FCVAR_ARCHIVE, "1 = draw each eye with a centred (symmetric) camera like the normal game and let SteamVR crop the part your lens needs. The game's own water, glass and sky effects assume a centred camera and warp otherwise. 0 = the headset's off-centre frustum" );
 static CVAR_DEFINE_AUTO( vr_flip_vfov, "1", FCVAR_ARCHIVE, "diagnostic for vr_sym_proj 0 only (it has no effect with vr_sym_proj 1): swap the up and down field of view. Try 1 if what is drawn sits a little too low or high compared to the menu pointer" );
 static CVAR_DEFINE_AUTO( vr_fov_scale, "1.0", 0, "diagnostic: scale the rendered field of view tangents (1.0 = exact)" );
-static CVAR_DEFINE_AUTO( vr_crouch_height, "0.30", FCVAR_ARCHIVE, "meters below your recentered height that count as physically crouching (you stand up again at 60% of this)" );
+static CVAR_DEFINE_AUTO( vr_crouch_height, "0.20", FCVAR_ARCHIVE, "meters below your recentered height that count as physically crouching (you stand up again at 60% of this)" );
 static CVAR_DEFINE_AUTO( vr_crouch_follow, "1", FCVAR_ARCHIVE, "1 = the view height given back when you crouch follows the game's own crouch curve exactly, so you see none of its crouch animation, only your real head" );
 static CVAR_DEFINE_AUTO( vr_crouch_full, "34", FCVAR_ARCHIVE, "how far the game lowers its view for a crouch (units), until it has been measured" );
 static CVAR_DEFINE_AUTO( vr_crouch_comp, "0", FCVAR_ARCHIVE, "0 = when you crouch in real life the view is kept at standing height exactly (the engine measures how far the game lowers it and gives that back, so none of the game crouch animation is seen, but the character still crouches: low spaces, speed, crouch jumps). More than 0 = a fixed amount instead (the old way, 28 worked)" );
@@ -269,6 +269,7 @@ static CVAR_DEFINE_AUTO( vr_dual_clip_tex, "", FCVAR_ARCHIVE, "extra texture nam
 static CVAR_DEFINE_AUTO( vr_dual_anim_hold, "idle+draw+holster+equip+deploy+reload+pull+hide+show+inspect+fidget+lean+sprint+walk+run", FCVAR_ARCHIVE, "animation names (part of the name, separated by +) that a gun on the left hand does NOT play" );
 static CVAR_DEFINE_AUTO( vr_dual_anim_play, "shoot+fire+shot", FCVAR_ARCHIVE, "parts of the animation names of the left weapon that are allowed to play. Everything else (idle, draw, melee, reload...) holds the first idle pose" );
 static CVAR_DEFINE_AUTO( vr_dual_builtin, "1", FCVAR_ARCHIVE, "1 = the left weapon of a dual wield is drawn by the engine's own studio renderer (it then turns with your hand). 0 = the game's renderer" );
+static CVAR_DEFINE_AUTO( vr_melee_blade, "1", FCVAR_ARCHIVE, "1 = a swing is traced from the tip along the way the weapon is drawn, 0 = along the controller" );
 static CVAR_DEFINE_AUTO( vr_melee_slack, "8", FCVAR_ARCHIVE, "how far ahead of the weapon tip (units) something counts as touched by a swing" );
 static CVAR_DEFINE_AUTO( vr_melee_aim, "1", FCVAR_ARCHIVE, "1 = a swing is aimed at where the tip of the weapon is. 0 = the old way, along the direction of the swing" );
 static CVAR_DEFINE_AUTO( vr_melee_radius, "10", FCVAR_ARCHIVE, "how far (game units) from the path of the weapon a creature still counts as hit by the swing" );
@@ -506,6 +507,7 @@ void VR_InitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_muzzle );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_own );
 	gEngfuncs.Cvar_RegisterVariable( &vr_melee_slack );
+	gEngfuncs.Cvar_RegisterVariable( &vr_melee_blade );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hand_reach );
 	gEngfuncs.Cvar_RegisterVariable( &vr_anim_play );
 	gEngfuncs.Cvar_RegisterVariable( &vr_anim_mask );
@@ -1051,7 +1053,18 @@ static float VR_SwingHand( int hand, const ref_viewpass_t *game, const vec3_t ey
 			VectorScale( tmp, 1.0f / speed, tmp );
 			VR_RotateZ( tmp, d, dir );
 
-			VectorMA( vr.hand[hand].pos, vr_melee_tip.value, vr.hand[hand].fwd, tip );
+			{
+				// the tip is where the blade really points (the way the weapon is drawn), not where the controller points: a
+				// knife held tilted in the hand used to be touched with a point below its visible blade
+				vec3_t tdir, wf, wl, wu;
+
+				VectorCopy( vr.hand[hand].fwd, tdir );
+
+				if( hand == 1 && vr_melee_blade.value && VR_GetViewModelAxes( wf, wl, wu ))
+					VectorCopy( wf, tdir );
+
+				VectorMA( vr.hand[hand].pos, vr_melee_tip.value, tdir, tip );
+			}
 
 			if( vr_melee_aim.value )
 			{
@@ -1091,7 +1104,10 @@ static float VR_SwingHand( int hand, const ref_viewpass_t *game, const vec3_t ey
 						sl = VectorLength( sd );
 					}
 
-					if( sl > 0.5f && VR_TraceRay( s0, sd, sl, eye, target ))
+					// The world itself (entity 0: the walls, floor and ceiling around you) is not something to attack: in a small room
+					// the weapon is always touching it, which made every swing "hit" the concrete. Only other things count:
+					// boards, doors, crates, creatures
+					if( sl > 0.5f && VR_TraceRay( s0, sd, sl, eye, target ) && vr_dbg_ent > 0 )
 					{
 						vec3_t contact;
 
@@ -1109,8 +1125,10 @@ static float VR_SwingHand( int hand, const ref_viewpass_t *game, const vec3_t ey
 							if( gp_host->realtime > next_print )
 							{
 								next_print = gp_host->realtime + 0.25;
-								gEngfuncs.Con_Printf( "VR melee: %s hand touched something (entity %d of the trace, at %.0f %.0f %.0f, swing speed %.0f)\n",
-									hand ? "right" : "left", vr_dbg_ent, contact[0], contact[1], contact[2], speed );
+								struct physent_s *pe = gEngfuncs.EV_GetPhysent( vr_dbg_ent );
+
+								gEngfuncs.Con_Printf( "VR melee: %s hand touched '%s' (entity %d of the trace, at %.0f %.0f %.0f, swing speed %.0f)\n",
+									hand ? "right" : "left", pe ? (const char *)pe : "?", vr_dbg_ent, contact[0], contact[1], contact[2], speed );
 							}
 						}
 					}

@@ -600,6 +600,12 @@ qboolean VR_LeftGripping( void )
 }
 
 // the left hand steers the gun: the weapon points from the right hand to the left hand
+// the weapon in the right hand is one that is held with two hands (shotgun, rifle): no other weapon can be in the left hand
+qboolean VR_ReloadWeaponTwoHanded( void )
+{
+	return rl.active && rl.def && rl.def->aim2h;
+}
+
 qboolean VR_ReloadTwoHandAim( void )
 {
 	return rl.active && rl.def && rl.def->aim2h && rl.twohand;

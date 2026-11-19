@@ -151,6 +151,7 @@ qboolean VR_ReloadIsBoltBone( const char *bonename );
 qboolean VR_ReloadBoltOffset( float off[3] );
 qboolean VR_ReloadWantsIdle( void );
 qboolean VR_ReloadTwoHandAim( void );
+qboolean VR_ReloadWeaponTwoHanded( void );
 qboolean VR_SkyModelsOn( void );
 qboolean VR_GetPoseAxes( vec3_t f, vec3_t l, vec3_t u );
 qboolean VR_GetViewModelAxes( vec3_t f, vec3_t l, vec3_t u );

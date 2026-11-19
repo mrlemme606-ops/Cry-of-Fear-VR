@@ -1637,6 +1637,24 @@ void VR_CrouchFixView( playermove_t *pm )
 		pm->view_ofs[2] = vr_stand_view - pm->player_mins[0][2] + pm->player_mins[pm->usehull][2];
 	else
 		pm->view_ofs[2] = vr_stand_view;
+
+	// the game takes 0.4 s to finish a crouch (and only then slows you down and uses the small hull). When your body crouches
+	// the crouch is finished at the next step: nothing of it is seen anyway
+	if( pm->bInDuck )
+		pm->flDuckTime = 0.0f;
+}
+
+// The game's view code smooths every rise of the origin on the ground (stairs). Standing up from a crouch raises the origin at
+// once, which that smoothing turned into a small upward move. While a crouch of your body lasts, the origin it is given does not
+// change with the hull (the difference is added to it and taken from the view height), so there is no jump to smooth.
+float VR_CrouchViewShift( void )
+{
+	playermove_t *pm = clgame.pmove;
+
+	if( !vr_crouch_src_on || !vr_crouch_episode || !pm || pm->onground == -1 || pm->usehull < 0 || pm->usehull > 1 )
+		return 0.0f;
+
+	return pm->player_mins[pm->usehull][2] - pm->player_mins[0][2];
 }
 
 void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
@@ -2237,7 +2255,7 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 	{
 		if( vr_a_since == 0.0 )
 			vr_a_since = host.realtime;
-		else if( host.realtime - vr_a_since > 0.18 )
+		else if( host.realtime - vr_a_since > 0.04 )
 			buttons |= BIT( VRB_CROUCH );
 	}
 	else

@@ -759,7 +759,9 @@ qboolean VR_CofDualModel( char *out, int size )
 
 	last_mode = *cof.dualmode;
 
-	if( *cof.dualmode == 3 && Q_strlen( cof.dualname ) >= 2 )
+	// a weapon held with two hands leaves no hand for another weapon. After a save was loaded the game can still say "dual
+	// wield" with a shotgun in the right hand: that is ignored here, so the universal left hand is back at once
+	if( *cof.dualmode == 3 && Q_strlen( cof.dualname ) >= 2 && !VR_ReloadWeaponTwoHanded( ))
 	{
 		Q_strncpy( last_name, cof.dualname, sizeof( last_name ));
 		last_seen = now;
@@ -890,6 +892,7 @@ static void COF_FreezeDualAnim( cl_entity_t *e )
 	// the idle the game itself uses for the left weapon, remembered per model
 	static struct { const void *model; int idle; } known[8];
 	static int known_next;
+	static qboolean seen_action;
 	studiohdr_t *hdr;
 	mstudioseqdesc_t *sd;
 	int i, seq = e->curstate.sequence, slot = -1, idle = -1;
@@ -915,6 +918,9 @@ static void COF_FreezeDualAnim( cl_entity_t *e )
 
 	if( VR_DualAnimPlays( sd[seq].label ))
 	{
+		// an attack was seen: from now on the idle the game returns to is the real one for the left hand
+		seen_action = true;
+
 		// an earlier hold set the rate to 0; the shot must run
 		if( e->curstate.framerate <= 0.0f )
 			e->curstate.framerate = 1.0f;
@@ -926,21 +932,52 @@ static void COF_FreezeDualAnim( cl_entity_t *e )
 	// blade down, for example) stays as it is, held on its first frame
 	if( COF_TrueIdle( sd[seq].label ))
 	{
-		if( slot < 0 )
+		char key[48], label[40];
+
+		COF_ModelKey( e->model->name, key, sizeof( key ));
+
+		// Right after a save was loaded the game shows an idle that is not the one of the left hand (the knife is held the
+		// way of the right hand until the first attack). The idle that was learned after a real attack wins over it
+		if( COF_IdleLookup( key, label, sizeof( label )) && Q_stricmp( label, sd[seq].label ))
 		{
-			slot = known_next++ & 7;
-			known[slot].model = e->model;
+			for( i = 0; i < hdr->numseq; i++ )
+			{
+				if( !Q_stricmp( sd[i].label, label ) && COF_TrueIdle( sd[i].label ))
+				{
+					e->curstate.sequence = i;
+					e->curstate.frame = 0.0f;
+					e->curstate.framerate = 0.0f;
+					return;
+				}
+			}
 		}
 
-		if( known[slot].idle != seq )
+		// an idle is only learned once an attack was seen, never from the first state after a load
+		if( seen_action )
 		{
-			char key[48];
+			if( slot < 0 )
+			{
+				slot = known_next++ & 7;
+				known[slot].model = e->model;
+			}
 
-			COF_ModelKey( e->model->name, key, sizeof( key ));
-			COF_IdleRemember( key, sd[seq].label );
+			if( known[slot].idle != seq )
+				COF_IdleRemember( key, sd[seq].label );
+
+			known[slot].idle = seq;
 		}
 
-		known[slot].idle = seq;
+		if( vr_dual_dbg.value )
+		{
+			static double next_print;
+
+			if( gp_host->realtime > next_print )
+			{
+				next_print = gp_host->realtime + 1.0;
+				gEngfuncs.Con_Printf( "VR dual: left weapon '%s' plays '%s' (sequence %d, attack seen %s)\n", e->model->name, sd[seq].label, seq, seen_action ? "yes" : "no" );
+			}
+		}
+
 		e->curstate.frame = 0.0f;
 		e->curstate.framerate = 0.0f;
 		return;
