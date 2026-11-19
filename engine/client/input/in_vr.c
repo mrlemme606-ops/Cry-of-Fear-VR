@@ -110,6 +110,7 @@ static CVAR_DEFINE_AUTO( vr_shake, "0", FCVAR_ARCHIVE, "1 = the game may shake t
 static CVAR_DEFINE_AUTO( vr_in_dir_yaw, "0", 0, "(internal) yaw of the direction the right hand points, relative to the body" );
 static CVAR_DEFINE_AUTO( vr_in_dir_pitch, "0", 0, "(internal) pitch of the direction the right hand points" );
 static CVAR_DEFINE_AUTO( vr_in_crouch, "0", 0, "(internal) physically crouching" );
+static CVAR_DEFINE_AUTO( vr_in_org_z, "0", 0, "(internal) height of the character's origin, for the ceiling check of the renderer" );
 static CVAR_DEFINE_AUTO( vr_in_buttons, "0", 0, "(internal) button bitmask" );
 static CVAR_DEFINE_AUTO( vr_in_hit_x, "0", 0, "(internal) where the hand ray hit the world" );
 static CVAR_DEFINE_AUTO( vr_in_hit_y, "0", 0, "(internal)" );
@@ -217,6 +218,7 @@ static qboolean vr_swing_pending, vr_lswing_pending;
 static double vr_move_dbg_until;
 static float vr_qs_yaw;	// the way the hand pointed when the selector opened (radians): 1 2 3 run from its left to its right
 static double vr_a_since;
+static qboolean vr_a_crouching;	// the crouch comes from holding A
 static int vr_jump_frames;
 static qboolean vr_dir_down[4];	// forward, back, left, right (with hysteresis)
 static int vr_last_movetype = -1;
@@ -703,6 +705,7 @@ void IN_VRInit( void )
 	Cvar_RegisterVariable( &vr_in_hud_off );
 	Cvar_RegisterVariable( &vr_shake );
 	Cvar_RegisterVariable( &vr_in_crouch );
+	Cvar_RegisterVariable( &vr_in_org_z );
 	Cvar_RegisterVariable( &vr_in_buttons );
 	Cvar_RegisterVariable( &vr_in_mask );
 	Cvar_RegisterVariable( &vr_in_hit_x );
@@ -1663,7 +1666,7 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 	float x, y, fwd, side;
 	float head_rel, aim_rel, aim_pitch, rot;
 	int buttons, mode;
-	qboolean in_game, on_ladder, on_boat, digital, stuck_forced;
+	qboolean in_game, on_ladder, on_boat, digital, stuck_forced, phys_crouch;
 
 	{
 		// the game's own inventory / save screens keep key_game but show a mouse cursor
@@ -2154,12 +2157,14 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 		if( !ducking )
 			stand_height = h;
 
+		Cvar_DirectSetValue( &vr_in_org_z, clgame.pmove->origin[2] );
+
 		// (see VR_CrouchFixView) the episode starts with a crouch of your body and ends when the character has stood up
 		vr_crouch_src_on = vr_crouch_source.value && Cvar_VariableValue( "vr_physical_crouch" ) > 0.5f;
 
 		if( !vr_crouch_src_on || vr_in_active.value <= 0.0f )
 			vr_crouch_episode = false;
-		else if( vr_in_crouch.value > 0.0f )
+		else if( vr_in_crouch.value > 0.0f && !vr_crouch_toggled && !vr_a_crouching )
 			vr_crouch_episode = true;
 		else if( !ducking )
 			vr_crouch_episode = false;
@@ -2240,10 +2245,16 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 		Cvar_DirectSetValue( &vr_in_qs_yaw, RAD2DEG( vr_qs_yaw ));
 	}
 
+	// One kind of crouch at a time (with physical crouching on): while your body crouches, the stick and holding A do not
+	// crouch, and while the stick or A crouch, your body crouching is ignored
+	phys_crouch = Cvar_VariableValue( "vr_physical_crouch" ) > 0.5f && vr_in_crouch.value > 0.0f && !vr_crouch_toggled && !vr_a_crouching;
+
 	if( y < -0.7f && !vr_down_latched )
 	{
 		vr_down_latched = true;
-		vr_crouch_toggled = !vr_crouch_toggled;
+
+		if( !phys_crouch )
+			vr_crouch_toggled = !vr_crouch_toggled;
 	}
 	else if( y > -0.3f )
 	{
@@ -2255,12 +2266,16 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 	{
 		if( vr_a_since == 0.0 )
 			vr_a_since = host.realtime;
-		else if( host.realtime - vr_a_since > 0.04 )
+		else if( host.realtime - vr_a_since > 0.04 && !phys_crouch )
+		{
 			buttons |= BIT( VRB_CROUCH );
+			vr_a_crouching = true;
+		}
 	}
 	else
 	{
 		vr_a_since = 0.0;
+		vr_a_crouching = false;
 	}
 
 	if( vr_jump_frames > 0 )
@@ -2269,7 +2284,7 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 		vr_jump_frames--;
 	}
 
-	if( vr_crouch_toggled || vr_in_crouch.value > 0.0f )
+	if( vr_crouch_toggled || vr_a_crouching || vr_in_crouch.value > 0.0f )
 		buttons |= BIT( VRB_CROUCH );
 
 	// digital walking: press the player's own movement keys, so everything the keyboard can do works
@@ -2410,7 +2425,11 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 	{
 		float ox = vr_in_room_x.value, oy = vr_in_room_y.value;
 
-		if(( ox != 0.0f || oy != 0.0f ) && !on_ladder && Cvar_VariableValue( "vr_in_menu" ) < 0.5f )
+		// While the stick walks, the room does not: the natural sway of your head would be added to the walking command as
+		// small sideways pushes, so holding the stick forward made the character drift left and right
+		qboolean stick_on = fabs( vr_in_move_fwd.value ) > 0.15f || fabs( vr_in_move_side.value ) > 0.15f;
+
+		if(( ox != 0.0f || oy != 0.0f ) && !stick_on && !on_ladder && Cvar_VariableValue( "vr_in_menu" ) < 0.5f )
 		{
 			vec3_t ang = { 0.0f, mode > 0 ? cl.viewangles[YAW] + aim_rel : cmd->viewangles[YAW], 0.0f }, f, r;
 			float vf, vs, len;

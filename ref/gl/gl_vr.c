@@ -154,6 +154,9 @@ static CVAR_DEFINE_AUTO( vr_sym_proj, "1", FCVAR_ARCHIVE, "1 = draw each eye wit
 static CVAR_DEFINE_AUTO( vr_flip_vfov, "1", FCVAR_ARCHIVE, "diagnostic for vr_sym_proj 0 only (it has no effect with vr_sym_proj 1): swap the up and down field of view. Try 1 if what is drawn sits a little too low or high compared to the menu pointer" );
 static CVAR_DEFINE_AUTO( vr_fov_scale, "1.0", 0, "diagnostic: scale the rendered field of view tangents (1.0 = exact)" );
 static CVAR_DEFINE_AUTO( vr_crouch_height, "0.20", FCVAR_ARCHIVE, "meters below your recentered height that count as physically crouching (you stand up again at 60% of this)" );
+static CVAR_DEFINE_AUTO( vr_ceiling, "1", FCVAR_ARCHIVE, "1 = your head cannot go above a ceiling (a low vent you crouched into): the view is pushed down" );
+static CVAR_DEFINE_AUTO( vr_ceiling_margin, "3", FCVAR_ARCHIVE, "units kept between your head and the ceiling" );
+static CVAR_DEFINE_AUTO( vr_light_clip, "1", FCVAR_ARCHIVE, "1 = the phone light does not go behind a wall when your hand is inside it" );
 static CVAR_DEFINE_AUTO( vr_crouch_follow, "1", FCVAR_ARCHIVE, "1 = the view height given back when you crouch follows the game's own crouch curve exactly, so you see none of its crouch animation, only your real head" );
 static CVAR_DEFINE_AUTO( vr_crouch_full, "34", FCVAR_ARCHIVE, "how far the game lowers its view for a crouch (units), until it has been measured" );
 static CVAR_DEFINE_AUTO( vr_crouch_comp, "0", FCVAR_ARCHIVE, "0 = when you crouch in real life the view is kept at standing height exactly (the engine measures how far the game lowers it and gives that back, so none of the game crouch animation is seen, but the character still crouches: low spaces, speed, crouch jumps). More than 0 = a fixed amount instead (the old way, 28 worked)" );
@@ -172,7 +175,7 @@ static CVAR_DEFINE_AUTO( vr_scope_line, "1", FCVAR_ARCHIVE, "thickness of the sc
 static CVAR_DEFINE_AUTO( vr_anim_still, "idle+fidget", 0, "weapon animations (name parts, separated by +) that never play: the weapon stays in the first frame. Keeps the aim steady" );
 static CVAR_DEFINE_AUTO( vr_anim_end, "draw+equip", 0, "weapon animations (name parts, separated by +) that are skipped: the weapon is shown in the ready pose right away" );
 static CVAR_DEFINE_AUTO( vr_empty_hand, "models/weapons/v_actions.mdl", FCVAR_ARCHIVE, "the model shown as your right hand when you hold nothing. Empty = none" );
-static CVAR_DEFINE_AUTO( vr_room_maxlag, "14", FCVAR_ARCHIVE, "how far (game units) your head can get ahead of your character before the view is pulled back. This is what stops you walking through walls" );
+static CVAR_DEFINE_AUTO( vr_room_maxlag, "9", FCVAR_ARCHIVE, "how far (game units) your head can get ahead of your character before the view is pulled back. This is what stops you walking through walls" );
 static CVAR_DEFINE_AUTO( vr_eye_flush, "0", FCVAR_ARCHIVE, "experiment for thin / see-through textures that are missing in VR: 1 = glFlush, 2 = glFinish at the end of each eye" );
 static CVAR_DEFINE_AUTO( vr_aim_pitch, "0", 0, "aim the shots higher (+) or lower (-) than the controller points, degrees (saved per weapon). For items like the camera" );
 static CVAR_DEFINE_AUTO( vr_aim_yaw, "0", 0, "aim the shots to the left (+) or right (-) of where the controller points, degrees (saved per weapon)" );
@@ -255,6 +258,7 @@ static CVAR_DEFINE_AUTO( vr_muzzle_z, "0", FCVAR_ARCHIVE, "muzzle: up" );
 static CVAR_DEFINE_AUTO( vr_dual_own, "1", FCVAR_ARCHIVE, "1 = hide the game's own picture of the left weapon in the dual wield (the one in front of your body) and show only the one on your hand" );
 static CVAR_DEFINE_AUTO( vr_dual_debug, "0", 0, "1 = print once a second whether the left weapon of a dual wield was placed at your hand" );
 static CVAR_DEFINE_AUTO( vr_dual_cut, "5", FCVAR_ARCHIVE, "where the arm of the left hand weapon is cut off, in units behind the hand (saved with vr_weapon_save_left)" );
+static CVAR_DEFINE_AUTO( vr_dual_cut_nightstick, "16", FCVAR_ARCHIVE, "arm cut of a nightstick in the left hand, units behind the hand (the stick reaches far behind the grip). Tune live with vr_dual_cut, then vr_weapon_save_left" );
 static CVAR_DEFINE_AUTO( vr_dual_cut_pitch, "0", FCVAR_ARCHIVE, "tilt of the left weapon's arm cut: pitch degrees (saved with vr_weapon_save_left)" );
 static CVAR_DEFINE_AUTO( vr_dual_cut_yaw, "0", FCVAR_ARCHIVE, "tilt of the left weapon's arm cut: yaw degrees (saved with vr_weapon_save_left)" );
 static CVAR_DEFINE_AUTO( vr_ui_key, "1", FCVAR_ARCHIVE, "the window is the floating UI. If something of the game covers all of it with opaque black (it did while dual wielding), black counts as see-through. 0 = never, 1 = only when the window is covered, 2 = always" );
@@ -328,6 +332,7 @@ static struct
 
 	vec3_t		head_pos;	// current head position, OpenVR axes, meters
 	qboolean	crouching;	// physically crouching (with hysteresis)
+	float		ceil_push;	// units the rig is pushed down so the head is not above a ceiling (a vent)
 	float		crouch_comp;	// units added to the eye height so the game's own crouch is not counted twice
 	vec3_t		head_game;	// current head position in the game world, units
 	float		head_game_yaw;	// current head yaw in the game world, degrees
@@ -492,6 +497,7 @@ void VR_InitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_builtin );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_cut );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_cut_pitch );
+	gEngfuncs.Cvar_RegisterVariable( &vr_dual_cut_nightstick );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_cut_yaw );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_anim_play );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_anim_hold );
@@ -547,6 +553,9 @@ void VR_InitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_crouch_height );
 	gEngfuncs.Cvar_RegisterVariable( &vr_crouch_comp );
 	gEngfuncs.Cvar_RegisterVariable( &vr_crouch_follow );
+	gEngfuncs.Cvar_RegisterVariable( &vr_light_clip );
+	gEngfuncs.Cvar_RegisterVariable( &vr_ceiling );
+	gEngfuncs.Cvar_RegisterVariable( &vr_ceiling_margin );
 	gEngfuncs.Cvar_RegisterVariable( &vr_crouch_full );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hide_crosshair );
 	gEngfuncs.Cvar_RegisterVariable( &vr_sky_dome );
@@ -771,6 +780,51 @@ static void VR_UpdateEyeParams( void )
 
 /*
 =================
+Ceiling: the character's body is where the game says it is, the head is where yours is. In a low space (a vent you crouched
+into) a head higher than the body would be above the ceiling and see the whole world from outside. Look up from the head: if
+there is a ceiling closer than the head, the whole rig is pushed down so the head stays under it.
+=================
+*/
+static void VR_CeilingPush( const ref_viewpass_t *game )
+{
+	vec3_t hp, st, end;
+	float d = game->viewangles[YAW] - vr.ref_yaw, orgz, headz, cap;
+	pmtrace_t tr;
+
+	vr.ceil_push = 0.0f;
+
+	if( !vr_ceiling.value || !vr.have_ref )
+		return;
+
+	orgz = gEngfuncs.pfnGetCvarFloat( "vr_in_org_z" );
+
+	if( orgz == 0.0f )
+		return;
+
+	VR_ConvPos( vr.head_pos, hp );
+	VectorSubtract( hp, vr.ref_pos, hp );
+	hp[2] += vr.crouch_comp;
+	VR_RotateZ( hp, d, hp );
+
+	st[0] = game->vieworigin[0] + hp[0];
+	st[1] = game->vieworigin[1] + hp[1];
+	st[2] = orgz;
+	VectorSet( end, st[0], st[1], orgz + 160.0f );
+
+	tr = gEngfuncs.CL_TraceLine( st, end, 8 );	// 8 = PM_WORLD_ONLY
+
+	if( tr.startsolid || tr.fraction >= 1.0f )
+		return;
+
+	cap = tr.endpos[2] - vr_ceiling_margin.value;
+	headz = game->vieworigin[2] + hp[2];
+
+	if( headz > cap )
+		vr.ceil_push = cap - headz;
+}
+
+/*
+=================
 Controllers: where they are in the game world (same mapping as the eyes), and where they point.
 =================
 */
@@ -780,12 +834,14 @@ static void VR_UpdateHands( const ref_viewpass_t *game )
 	float th = DEG2RAD( vr_hand_pitch.value ), c = cos( th ), s = sin( th );
 	int h, i;
 
+	VR_CeilingPush( game );
+
 	{
 		vec3_t hp, hf;
 
 		VR_ConvPos( vr.head_pos, hp );
 		VectorSubtract( hp, vr.ref_pos, hp );
-		hp[2] += vr.crouch_comp;
+		hp[2] += vr.crouch_comp + vr.ceil_push;
 		VR_RotateZ( hp, d, hp );
 		VectorAdd( game->vieworigin, hp, vr.head_game );
 		VR_RotateZ( vr.axis_fwd, d, hf );
@@ -822,7 +878,7 @@ static void VR_UpdateHands( const ref_viewpass_t *game )
 
 		VR_ConvPos( p, tmp );
 		VectorSubtract( tmp, vr.ref_pos, tmp );
-		tmp[2] += vr.crouch_comp;
+		tmp[2] += vr.crouch_comp + vr.ceil_push;
 		VR_RotateZ( tmp, d, tmp );
 		VectorAdd( game->vieworigin, tmp, vr.hand[h].pos );
 
@@ -854,6 +910,7 @@ static qboolean vr_pose_valid;
 static vec3_t vr_pose_f, vr_pose_l, vr_pose_u;
 static qboolean vr_dump_bones_done;
 static int vr_dbg_ent = -1;
+static vec3_t vr_dbg_normal;	// the surface normal of the last VR_TraceRay hit
 static float vr_dbg_fraction;
 static qboolean vr_dbg_solid;
 
@@ -888,6 +945,7 @@ static qboolean VR_TraceRay( const vec3_t start, const vec3_t dir, float dist, c
 	vr_dbg_ent = hit.ent;
 	vr_dbg_fraction = hit.fraction;
 	vr_dbg_solid = hit.startsolid;
+	VectorCopy( hit.plane.normal, vr_dbg_normal );
 
 	VectorCopy( end, out );
 
@@ -1114,6 +1172,12 @@ static float VR_SwingHand( int hand, const ref_viewpass_t *game, const vec3_t ey
 						VectorScale( sd, 1.0f / sl, sd );
 						VectorCopy( target, contact );
 						VectorMA( target, 3.0f, sd, target );
+
+						// The game's hit must run straight into the surface that was touched. A swing along a long board
+						// (right to left) has a direction along the board: a hit going that way grazes the board and ends at the
+						// wall behind it. Into the surface, it cannot miss
+						if( DotProduct( vr_dbg_normal, vr_dbg_normal ) > 0.5f && DotProduct( vr_dbg_normal, sd ) < -0.05f )
+							VectorNegate( vr_dbg_normal, sd );
 						hit = true;
 						VR_PublishContact( hand, true, contact, sd );
 						contact_published = true;
@@ -1629,6 +1693,12 @@ qboolean VR_GetViewModelAxes( vec3_t f, vec3_t l, vec3_t u )
 // the game's own picture of the left weapon is only hidden while we draw one on the hand ourselves
 // the game's own picture of its left weapon (it sits in front of the body) is never wanted while VR is active, also when the
 // weapon is not drawn at the hand: for a moment after a weapon is switched, and after a save was loaded
+// the viewmodel of the weapon in the right hand
+const char *VR_CurrentWeaponModel( void )
+{
+	return vr_tune_model;
+}
+
 qboolean vr_dual_hide_any( void )
 {
 	return vr_dual.value && vr_dual_own.value;
@@ -2156,7 +2226,9 @@ static convar_t *vr_tune_vars[] =
 	&vr_vm_grip_x, &vr_vm_grip_y, &vr_vm_grip_z, &vr_vm_pitch, &vr_vm_yaw,
 	&vr_vm_roll, &vr_vm_flip_roll, &vr_vm_scale, &vr_hand_pitch, &vr_vm_arm_cut, &vr_vm_cut_pitch, &vr_vm_cut_yaw,
 	&vr_light_x, &vr_light_y, &vr_light_z, &vr_scope_x, &vr_scope_y, &vr_scope_z, &vr_scope_radius, &vr_scope_fov,
-	&vr_light_pitch, &vr_light_yaw, &vr_vm_mirror, &vr_aim_pitch, &vr_aim_yaw, &vr_anim_mask, &vr_rl_grip_radius, &vr_rl_grip_x, &vr_rl_grip_y, &vr_rl_grip_z, &vr_muzzle_x, &vr_muzzle_y, &vr_muzzle_z
+	&vr_light_pitch, &vr_light_yaw, &vr_vm_mirror, &vr_aim_pitch, &vr_aim_yaw, &vr_anim_mask, &vr_rl_grip_radius, &vr_rl_grip_x, &vr_rl_grip_y, &vr_rl_grip_z, &vr_muzzle_x, &vr_muzzle_y, &vr_muzzle_z,
+	// the cut of the left hand gripping the weapon (sniper rifle, M4...): saved per weapon with vr_weapon_save
+	&vr_lh_arm_cut, &vr_lh_cut_pitch, &vr_lh_cut_yaw
 };
 
 #define VR_TUNE_COUNT ( (int)( sizeof( vr_tune_vars ) / sizeof( vr_tune_vars[0] )))
@@ -2388,6 +2460,10 @@ static void VR_DualLoadSettings( const char *model )
 			else
 				gEngfuncs.Cvar_SetValue( "vr_dual_cut", 4.0f );
 		}
+
+		// the stick reaches far behind the grip: cutting the arm at the usual place cut half of the stick as well
+		if( !Q_stricmp( base, "v_nightstick" ))
+			gEngfuncs.Cvar_SetValue( "vr_dual_cut", vr_dual_cut_nightstick.value );
 	}
 }
 
@@ -3449,6 +3525,28 @@ static void VR_UpdateHandLight( const ref_viewpass_t *game )
 		VectorMA( start, vr_light_z.value, vr.hand[1].up, start );
 	}
 
+	// A hand that is inside a wall (a tight vent) would give the game's lights a position behind the wall, where the lighting is
+	// that of the room on the other side (a yellow lamp, a red alarm) and the beam took its colour. The light sits where the
+	// head can see it: at the wall in front of the hand
+	if( vr_light_clip.value )
+	{
+		vec3_t to_hand;
+		pmtrace_t lt;
+
+		VectorSubtract( start, vr.head_game, to_hand );
+
+		if( VectorLength( to_hand ) > 1.0f )
+		{
+			lt = gEngfuncs.CL_TraceLine( vr.head_game, start, 8 );	// 8 = PM_WORLD_ONLY
+
+			if( !lt.startsolid && lt.fraction < 1.0f )
+			{
+				VectorNormalize( to_hand );
+				VectorMA( lt.endpos, -2.0f, to_hand, start );
+			}
+		}
+	}
+
 	// where the beam lands, for the game's point lights that sit on the wall the beam hits
 	if( VR_TraceRay( start, dir, vr_light_distance.value, game->vieworigin, end ))
 		VectorMA( end, -8.0f, dir, spot );
@@ -3924,7 +4022,7 @@ void VR_SetupEyeView( int eye, const ref_viewpass_t *game, ref_viewpass_t *out )
 
 	VR_ConvPos( ep, eyepos );
 	VectorSubtract( eyepos, vr.ref_pos, offset );
-	offset[2] += vr.crouch_comp;
+	offset[2] += vr.crouch_comp + vr.ceil_push;
 
 	// the mouse/keyboard yaw turns the whole rig; the head only adds to it
 	d = game->viewangles[YAW] - vr.ref_yaw;

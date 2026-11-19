@@ -761,6 +761,34 @@ qboolean VR_CofDualModel( char *out, int size )
 
 	// a weapon held with two hands leaves no hand for another weapon. After a save was loaded the game can still say "dual
 	// wield" with a shotgun in the right hand: that is ignored here, so the universal left hand is back at once
+	// After a save was loaded the game can keep saying "dual wield" when the weapon in the right hand is changed (it is only
+	// cleared properly when you dual wield again). The pair of weapons is remembered when a dual wield is first seen: if the
+	// right hand then holds something else, the left weapon is not shown, and the right trigger shoots again
+	{
+		static char pair_left[64], pair_right[64];
+		static double pair_since;
+		static qboolean pair_ok;
+
+		if( *cof.dualmode == 3 && Q_strlen( cof.dualname ) >= 2 )
+		{
+			const char *rw = VR_CurrentWeaponModel();
+
+			if( !pair_ok || Q_stricmp( pair_left, cof.dualname ))
+			{
+				Q_strncpy( pair_left, cof.dualname, sizeof( pair_left ));
+				Q_strncpy( pair_right, rw, sizeof( pair_right ));
+				pair_since = now;
+				pair_ok = true;
+			}
+			else if( now - pair_since < 1.5 )
+				Q_strncpy( pair_right, rw, sizeof( pair_right ));	// the game is still putting its weapons in the hands
+			else if( rw[0] && pair_right[0] && Q_stricmp( pair_right, rw ))
+				return false;
+		}
+		else
+			pair_ok = false;
+	}
+
 	if( *cof.dualmode == 3 && Q_strlen( cof.dualname ) >= 2 && !VR_ReloadWeaponTwoHanded( ))
 	{
 		Q_strncpy( last_name, cof.dualname, sizeof( last_name ));
