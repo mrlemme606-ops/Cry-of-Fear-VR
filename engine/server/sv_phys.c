@@ -352,7 +352,6 @@ qboolean SV_PlayerRunThink( edict_t *ent, float frametime, double time )
 
 			VectorCopy( save_ofs, ent->v.view_ofs );
 			VectorCopy( save_ang, ent->v.v_angle );
-			vr_melee_override = false;
 			return ret;
 		}
 	}

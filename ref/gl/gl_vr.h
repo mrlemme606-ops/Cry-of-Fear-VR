@@ -58,6 +58,7 @@ qboolean VR_ClimbHide( void );
 void VR_MuzzleOffset( vec3_t att, const vec3_t f, const vec3_t l, const vec3_t u );
 int VR_GetPvsOrigins( vec3_t out[3] );
 qboolean VR_TwoHandActive( void );
+qboolean VR_GripCutPlane( vec3_t n, vec3_t c );
 void VR_EndEventPose( qboolean was );
 void VR_CofSetHandLight( qboolean valid, qboolean omni, qboolean phone, const float *start, const float *dir, const float *spot );
 void VR_NewFrame( void );

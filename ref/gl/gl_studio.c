@@ -2239,8 +2239,26 @@ static void R_StudioDrawPoints( void )
 			}
 		}
 
-		for( int i = 0; i < numverts; i++ )
-			g_studio.vr_hidden[i] = ( pvertbone[i] < nb && bonehide[pvertbone[i]] );
+		{
+			vec3_t gn, gc;
+			qboolean grip = RI.currententity == tr.viewent && !R_StudioIsDualEntity( ) && VR_GripCutPlane( gn, gc );
+
+			for( int i = 0; i < numverts; i++ )
+			{
+				g_studio.vr_hidden[i] = ( pvertbone[i] < nb && bonehide[pvertbone[i]] );
+
+				// the weapon's own left arm, cut at the left controller while the left hand grips the weapon
+				if( grip && !g_studio.vr_hidden[i] && pvertbone[i] < nb && !Q_strnicmp( vrbones[pvertbone[i]].name, "l_", 2 ))
+				{
+					vec3_t d;
+
+					VectorSubtract( g_studio.verts[i], gc, d );
+
+					if( DotProduct( d, gn ) < 0.0f )
+						g_studio.vr_hidden[i] = true;
+				}
+			}
+		}
 
 		g_studio.vr_filter = true;
 	}

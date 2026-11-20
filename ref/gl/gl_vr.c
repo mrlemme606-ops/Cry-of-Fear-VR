@@ -157,6 +157,9 @@ static CVAR_DEFINE_AUTO( vr_crouch_height, "0.20", FCVAR_ARCHIVE, "meters below 
 static CVAR_DEFINE_AUTO( vr_ceiling, "1", FCVAR_ARCHIVE, "1 = your head cannot go above a ceiling (a low vent you crouched into): the view is pushed down" );
 static CVAR_DEFINE_AUTO( vr_ceiling_margin, "3", FCVAR_ARCHIVE, "units kept between your head and the ceiling" );
 static CVAR_DEFINE_AUTO( vr_light_clip, "1", FCVAR_ARCHIVE, "1 = the phone light does not go behind a wall when your hand is inside it" );
+static CVAR_DEFINE_AUTO( vr_grip_cut, "0", FCVAR_ARCHIVE, "the weapon's own left arm, shown while your left hand grips the weapon: units behind your left controller where it is cut off (0 = not cut). Saved per weapon with vr_weapon_save" );
+static CVAR_DEFINE_AUTO( vr_grip_cut_pitch, "0", FCVAR_ARCHIVE, "tilt of the grip cut, up/down (degrees)" );
+static CVAR_DEFINE_AUTO( vr_grip_cut_yaw, "0", FCVAR_ARCHIVE, "tilt of the grip cut, left/right (degrees)" );
 static CVAR_DEFINE_AUTO( vr_crouch_follow, "1", FCVAR_ARCHIVE, "1 = the view height given back when you crouch follows the game's own crouch curve exactly, so you see none of its crouch animation, only your real head" );
 static CVAR_DEFINE_AUTO( vr_crouch_full, "34", FCVAR_ARCHIVE, "how far the game lowers its view for a crouch (units), until it has been measured" );
 static CVAR_DEFINE_AUTO( vr_crouch_comp, "0", FCVAR_ARCHIVE, "0 = when you crouch in real life the view is kept at standing height exactly (the engine measures how far the game lowers it and gives that back, so none of the game crouch animation is seen, but the character still crouches: low spaces, speed, crouch jumps). More than 0 = a fixed amount instead (the old way, 28 worked)" );
@@ -553,6 +556,9 @@ void VR_InitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_crouch_height );
 	gEngfuncs.Cvar_RegisterVariable( &vr_crouch_comp );
 	gEngfuncs.Cvar_RegisterVariable( &vr_crouch_follow );
+	gEngfuncs.Cvar_RegisterVariable( &vr_grip_cut );
+	gEngfuncs.Cvar_RegisterVariable( &vr_grip_cut_pitch );
+	gEngfuncs.Cvar_RegisterVariable( &vr_grip_cut_yaw );
 	gEngfuncs.Cvar_RegisterVariable( &vr_light_clip );
 	gEngfuncs.Cvar_RegisterVariable( &vr_ceiling );
 	gEngfuncs.Cvar_RegisterVariable( &vr_ceiling_margin );
@@ -806,15 +812,22 @@ static void VR_CeilingPush( const ref_viewpass_t *game )
 	hp[2] += vr.crouch_comp;
 	VR_RotateZ( hp, d, hp );
 
-	st[0] = game->vieworigin[0] + hp[0];
-	st[1] = game->vieworigin[1] + hp[1];
-	st[2] = orgz;
+	// first straight above the body (always inside the hull, so the trace never starts in a wall), then above the head
+	// (it may lean out of a vent). 1 = PM_STUDIO_IGNORE: the world and brush objects (vent covers, boards), not props
+	VectorSet( st, game->vieworigin[0], game->vieworigin[1], orgz );
 	VectorSet( end, st[0], st[1], orgz + 160.0f );
-
-	tr = gEngfuncs.CL_TraceLine( st, end, 8 );	// 8 = PM_WORLD_ONLY
+	tr = gEngfuncs.CL_TraceLine( st, end, 1 );
 
 	if( tr.startsolid || tr.fraction >= 1.0f )
-		return;
+	{
+		st[0] = game->vieworigin[0] + hp[0];
+		st[1] = game->vieworigin[1] + hp[1];
+		VectorSet( end, st[0], st[1], orgz + 160.0f );
+		tr = gEngfuncs.CL_TraceLine( st, end, 1 );
+
+		if( tr.startsolid || tr.fraction >= 1.0f )
+			return;
+	}
 
 	cap = tr.endpos[2] - vr_ceiling_margin.value;
 	headz = game->vieworigin[2] + hp[2];
@@ -1888,6 +1901,28 @@ void VR_ViewModelCutFollow( int side, qboolean valid, const vec3_t wrist, const 
 	}
 }
 
+// The weapon model has an arm of its own for the left hand (it shows while the left hand grips the weapon). Its parts behind this
+// plane, which sits on the left controller, are not drawn. Returns false when no cut is wanted.
+qboolean VR_GripCutPlane( vec3_t n, vec3_t c )
+{
+	float cp, cy;
+	vec3_t t;
+
+	if( vr_grip_cut.value <= 0.0f || !vr.hand[0].valid || !VR_TwoHandActive( ))
+		return false;
+
+	cp = DEG2RAD( vr_grip_cut_pitch.value );
+	cy = DEG2RAD( vr_grip_cut_yaw.value );
+
+	VectorScale( vr.hand[0].fwd, cos( cy ), t );
+	VectorMA( t, sin( cy ), vr.hand[0].left, t );
+	VectorScale( t, cos( cp ), n );
+	VectorMA( n, sin( cp ), vr.hand[0].up, n );
+	VectorNormalize( n );
+	VectorMA( vr.hand[0].pos, -vr_grip_cut.value, n, c );
+	return true;
+}
+
 void VR_ViewModelClip( qboolean on )
 {
 	GLdouble eq[4];
@@ -2228,7 +2263,8 @@ static convar_t *vr_tune_vars[] =
 	&vr_light_x, &vr_light_y, &vr_light_z, &vr_scope_x, &vr_scope_y, &vr_scope_z, &vr_scope_radius, &vr_scope_fov,
 	&vr_light_pitch, &vr_light_yaw, &vr_vm_mirror, &vr_aim_pitch, &vr_aim_yaw, &vr_anim_mask, &vr_rl_grip_radius, &vr_rl_grip_x, &vr_rl_grip_y, &vr_rl_grip_z, &vr_muzzle_x, &vr_muzzle_y, &vr_muzzle_z,
 	// the cut of the left hand gripping the weapon (sniper rifle, M4...): saved per weapon with vr_weapon_save
-	&vr_lh_arm_cut, &vr_lh_cut_pitch, &vr_lh_cut_yaw
+	&vr_lh_arm_cut, &vr_lh_cut_pitch, &vr_lh_cut_yaw,
+	&vr_grip_cut, &vr_grip_cut_pitch, &vr_grip_cut_yaw
 };
 
 #define VR_TUNE_COUNT ( (int)( sizeof( vr_tune_vars ) / sizeof( vr_tune_vars[0] )))
