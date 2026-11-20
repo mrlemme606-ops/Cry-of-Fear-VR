@@ -32,7 +32,6 @@ Basic controls:
 | Jump | A button (hold it to crouch-jump) |
 | Crouch | Physically crouch, or press the right thumbstick down |
 | Recenter | Click both thumbsticks at the same time |
-| Inventory | 
 | Reload | B |
 | Menu | Y |
 | Inventory | X |
