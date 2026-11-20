@@ -72,10 +72,6 @@ Basic controls:
 - Only tested on a Quest 2 through SteamVR. Other headsets and controllers are untested. (feel free to report results)
 - Windows only.
 
-## Performance and settings tips
-
-All settings are console commands (open the console in-game) and are saved.
-
 ## Disclaimers
 
 - This is an **unofficial, fan-made, non-commercial** project. It is **not affiliated with, endorsed by, or supported by** the Cry of Fear developers or any rights holder.
