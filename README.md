@@ -39,7 +39,7 @@ Basic controls:
 
 ## Working features
 
-- Full campaign playable in VR with room-scale movement.
+- Full campaign playable in VR with room-scale movement. (full playthrough testing still ongoing)
 - All base campaign weapons function. (Secret Room Weapons Untested)
 - Snap and smooth turning, and a recenter shortcut.
 - Physical crouching, plus hold-A crouch-jump for tight ledges.
