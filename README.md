@@ -17,7 +17,7 @@ An unofficial VR port of **Cry of Fear** for SteamVR headsets, built on the **Xa
 1. Install **Cry of Fear** on Steam.
 2. Find the game folder. In Steam: right-click Cry of Fear, **Manage**, **Browse local files**. A typical path is `C:\Program Files (x86)\Steam\steamapps\common\Cry of Fear`.
 3. **Drag and drop all files from this release into your Cry of Fear folder**, and agree to merge or overwrite if Windows asks.
-4. Start **SteamVR**
+4. Start **SteamVR**.
 5. Run **`cofvr.exe`** from your Cry of Fear folder.
 6. Stand where you want to play and **click both thumbsticks together** to recenter.
 
