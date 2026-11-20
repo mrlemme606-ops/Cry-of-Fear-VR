@@ -154,7 +154,7 @@ static CVAR_DEFINE_AUTO( vr_key_swing, "mouse1", FCVAR_ARCHIVE, "key pressed whe
 static CVAR_DEFINE_AUTO( vr_key_whip, "mouse2", FCVAR_ARCHIVE, "key pressed when you swing a gun (pistol whip). empty = nothing" );
 static CVAR_DEFINE_AUTO( vr_key_reload, "r", FCVAR_ARCHIVE, "key pressed for you when a manual reload is finished (the game then does the actual reload)" );
 static CVAR_DEFINE_AUTO( vr_move_snap, "1.5", FCVAR_ARCHIVE, "how quickly your walking direction follows the stick. The game's acceleration (10) and friction (4) are both multiplied by this, so top speed and crouch speed stay the same but turns of direction are faster. 1 = the game's own values" );
-static CVAR_DEFINE_AUTO( vr_crouch_source, "1", FCVAR_ARCHIVE, "1 = when you crouch in real life the character crouches (hull, speed, low gaps, crouch jumps) but the game does not lower the view at all, so there is no crouch animation to see. 0 = the old way (the renderer gives the lowering back)" );
+static CVAR_DEFINE_AUTO( vr_crouch_source, "0", FCVAR_ARCHIVE, "1 = when you crouch in real life the character crouches (hull, speed, low gaps, crouch jumps) but the game does not lower the view at all, so there is no crouch animation to see. 0 = the old way (the renderer gives the lowering back)" );
 static CVAR_DEFINE_AUTO( vr_move_debug, "0", 0, "1 = print the walking numbers 4 times a second while the left stick is pushed (stick, command, real speed, the game's speed limit)" );
 static CVAR_DEFINE_AUTO( vr_debug_move, "0", 0, "print the player's movement type when it changes (helps find where analog movement fails)" );
 
