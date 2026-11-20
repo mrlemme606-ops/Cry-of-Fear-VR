@@ -1,4 +1,4 @@
-# Cry of Fear VR: Early Release v0.5
+# Cry of Fear VR
 
 An unofficial VR port of **Cry of Fear** for SteamVR headsets, built on the **Xash3D FWGS** engine. It plays the original campaign from start to finish in room-scale VR with motion controllers.
 
