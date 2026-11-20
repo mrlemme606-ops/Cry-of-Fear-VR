@@ -40,7 +40,7 @@ Basic controls:
 ## Working features
 
 - Full campaign playable in VR with room-scale movement.
-- All base campaign weapons function.
+- All base campaign weapons function. (Secret Room Weapons Untested)
 - Snap and smooth turning, and a recenter shortcut.
 - Physical crouching, plus hold-A crouch-jump for tight ledges.
 - Weapons held in your hand with hand-relative aiming, and a two-hand grip for rifles and shotguns.
@@ -62,13 +62,14 @@ Basic controls:
 
 **Dual wielding and weapons**
 - Arm and sleeve cutting on the left hand is not perfect. A nightstick in the left hand shows the whole arm.
+- Dual Wielding may provide some unaccounted for jank.
 
 **Movement**
 - Walking can feel slow for a few seconds after saving at a tape recorder.
-- Walking jank
+- Not so smooth walking with a bit of jank
 
 **Hardware**
-- Only tested on a Quest 2 through SteamVR. Other headsets and controllers are untested.
+- Only tested on a Quest 2 through SteamVR. Other headsets and controllers are untested. (feel free to report results)
 - Windows only.
 
 ## Performance and settings tips
@@ -89,4 +90,4 @@ All settings are console commands (open the console in-game) and are saved.
 - **OpenVR** by Valve Software is used to talk to SteamVR.
 - **cof-enhanced** by hajdawery for a headstart into porting Cry Of Fear into the Xash3D engine
 - VR port and changes by **thumbgaming**
-- Claude 
+- Made with the help of AI (Claude)
