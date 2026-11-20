@@ -1,147 +1,93 @@
-> [!CAUTION]
-> **Only download Xash3D FWGS from official sources.** Third-party builds, "modded launchers", "optimized" repacks and random mirrors are frequently bundled with malware, miners, spyware and credential stealers. We cannot vouch for anything we did not build. Get official binaries only from the [releases page](https://github.com/FWGS/xash3d-fwgs/releases/tag/continuous).
+# Cry of Fear VR: Early Release v0.5
 
-# Xash3D FWGS Engine <img align="right" width="128" height="128" src="https://github.com/FWGS/xash3d-fwgs/raw/master/game_launch/icon-xash-material.png" alt="Xash3D FWGS icon" />
-[![GitHub Actions Status](https://github.com/FWGS/xash3d-fwgs/actions/workflows/c-cpp.yml/badge.svg)](https://github.com/FWGS/xash3d-fwgs/actions/workflows/c-cpp.yml) [![FreeBSD Build Status](https://img.shields.io/cirrus/github/FWGS/xash3d-fwgs?label=freebsd%20build)](https://cirrus-ci.com/github/FWGS/xash3d-fwgs) \
-[![Discord Server](https://img.shields.io/discord/355697768582610945?logo=Discord&label=International%20Discord%20chat)](http://xash.su/discord/) [![Russian speakers Telegram Chat](https://img.shields.io/badge/Russian_speakers_Telegram_chat-gray?logo=Telegram)](https://t.me/flyingwithgauss) \
-[![Download Daily Build](https://img.shields.io/badge/downloads-testing-orange)](https://github.com/FWGS/xash3d-fwgs/releases/tag/continuous)
+An unofficial VR port of **Cry of Fear** for SteamVR headsets, built on the **Xash3D FWGS** engine. It plays the original campaign from start to finish in room-scale VR with motion controllers.
 
-Xash3D ([pronounced](https://ipa-reader.com/?text=ks%C9%91%CA%82) `[ksɑʂ]`) FWGS is a game engine, aimed to provide compatibility with Half-Life Engine and extend it, as well as to give game developers well known workflow.
+> **This is an early release.** The campaign is playable from beginning to end, but expect rough edges. Please read **Known issues** before you start, and feel free to report other issues.
 
-Xash3D FWGS is a heavily modified fork of an original [Xash3D Engine](https://www.moddb.com/engines/xash3d-engine) by Unkle Mike.
+---
 
-## Donate
-[![Donate to FWGS button](https://img.shields.io/badge/Donate_to_FWGS-%3C3-magenta)](Documentation/donate.md) \
-If you like Xash3D FWGS, consider supporting individual engine maintainers. By supporting us, you help to continue developing this game engine further. The sponsorship links are available in [documentation](Documentation/donate.md).
+## What you need
 
-## Fork features
-* Steam Half-Life (HLSDK 2.5) support.
-* Crossplatform and modern compilers support: supports Windows, Linux, BSD & Android on x86 & ARM and [many more](Documentation/ports.md).
-* Better multiplayer: multiple master servers, headless dedicated server, voice chat, [GoldSrc protocol support](Documentation/goldsrc-protocol-support.md) and IPv6 support.
-* Multiple renderers support: OpenGL, GLESv1, GLESv2 and Software.
-* Advanced virtual filesystem: `.pk3` and `.pk3dir` support, compatibility with GoldSrc FS module, fast case-insensitivity emulation for crossplatform.
-* Mobility API: better game integration on mobile devices (vibration, touch controls).
-* Different input methods: touch and gamepad in addition to mouse & keyboard.
-* TrueType font rendering, as a part of mainui_cpp.
-* External VGUI support module.
-* PNG & KTX2 image format support.
-* Ogg Vorbis (`.ogg`) & Ogg Opus (`.opus`) audio formats support.
-* [A set of small improvements](Documentation/), without broken compatibility.
+- **Cry of Fear, installed from Steam** (it is free on Steam). This mod does **not** include any game files. Without the Steam version it will not run.
+- **SteamVR**, running before you start the game.
+- A **Windows PC** and a VR headset that works with SteamVR. Developed and tested on a **Meta Quest 2** (via Link or Virtual Desktop). Other headsets are untested, see below.
 
-## Installation & Running
-0) Get Xash3D FWGS binaries: you can use [testing](https://github.com/FWGS/xash3d-fwgs/releases/tag/continuous) build or you can compile engine from source code.
-1) Copy engine binaries to some directory.
-2) Copy `valve` directory from [Half-Life](https://store.steampowered.com/app/70/HalfLife/) to directory with engine binaries.
-If your CPU is NOT x86 compatible or you're running 64-bit version of the engine, you may want to compile [Half-Life SDK](https://github.com/FWGS/hlsdk-portable).
-This repository contains our fork of HLSDK and restored source code for Half-Life expansions and some mods.
-You still needed to copy `valve` directory as all game resources located there.
-3) Run the main executable (`xash3d.exe` or AppImage).
+## Installation
 
-For additional info, run Xash3D with `-help` command line key.
+1. Install **Cry of Fear** on Steam.
+2. Find the game folder. In Steam: right-click Cry of Fear, **Manage**, **Browse local files**. A typical path is `C:\Program Files (x86)\Steam\steamapps\common\Cry of Fear`.
+3. **Drag and drop all files from this release into your Cry of Fear folder**, and agree to merge or overwrite if Windows asks.
+4. Start **SteamVR**
+5. Run **`cofvr.exe`** from your Cry of Fear folder.
+6. Stand where you want to play and **click both thumbsticks together** to recenter.
 
-### Android
-0) Install the APK file.
-1) Copy `valve` directory to a folder named `xash` in the Internal storage.
-2) Run games from within the app.
+## Controls
 
-## Reporting issues
-* Issues are accepted in both English and Russian.
-* They are only accepted if you run legally acquired product (e.g. Half-Life in Steam).
+Basic controls:
 
-## Contributing code
-* Check the CONTRIBUTING.md file.
+| Action | Control |
+| --- | --- |
+| Walk | Left thumbstick |
+| Turn | Right thumbstick (snap or smooth, set in the options menu) |
+| Jump | A button (hold it to crouch-jump) |
+| Crouch | Physically crouch, or press the right thumbstick down |
+| Recenter | Click both thumbsticks at the same time |
+| Inventory | 
+| Reload | B |
+| Menu | Y |
+| Inventory | X |
+| Hotkey Selector | Right Joystick up |
 
-## Build instructions
-We are using Waf build system. If you have some Waf-related questions, I recommend you to read [Waf Book](https://waf.io/book/).
+## Working features
 
-**NOTE: NEVER USE GitHub's ZIP ARCHIVES. GitHub doesn't include external dependencies we're using!**
+- Full campaign playable in VR with room-scale movement.
+- All base campaign weapons function.
+- Snap and smooth turning, and a recenter shortcut.
+- Physical crouching, plus hold-A crouch-jump for tight ledges.
+- Weapons held in your hand with hand-relative aiming, and a two-hand grip for rifles and shotguns.
+- Dual wielding.
+- Rifle scope view on the sniper rifle and other scoped weapons.
+- Phone flashlight, flare and lantern lights.
+- Health and ammo displayed on your left hand.
 
-### Prerequisites
-If your CPU is x86 compatible and you're on Windows or Linux, we are building 32-bit code by default. This was done to maintain compatibility with Steam releases of Half-Life and based on it's engine games.
-Even if Xash3D FWGS does support targetting 64-bit, you can't load games without recompiling them from source code!
+## Known issues
 
-If your CPU is NOT x86 compatible or you decided build 64-bit version of engine, you may want to compile [Half-Life SDK](https://github.com/FWGS/hlsdk-portable).
-This repository contains our fork of HLSDK and restored source code for Half-Life expansions and some mods.
+**Melee**
+- Melee hits are not reliable. Enemies are hit most of the time, but swings at planks and other breakable objects can still miss.
 
-#### Windows (Visual Studio)
-* Install Visual Studio.
-* Install latest [Python](https://python.org) **OR** run `cinst python.install` if you have Chocolatey.
-* Install latest [Git](https://git-scm.com/download/win) **OR** run `cinst git.install` if you have Chocolatey.
-* Download [SDL2](https://libsdl.org/download-2.0.php) development package for Visual Studio.
-* Clone this repository: `git clone --recursive https://github.com/FWGS/xash3d-fwgs`.
-* Make sure you have at least 12GB of free space to store all build-time dependencies: ~10GB for Visual Studio, 300 MB for Git, 100 MB for Python and other.
+**Lighting**
+- The glow of the phone flashlight can flicker or change colour (yellow, orange, green, etc.).
 
-#### GNU/Linux
-##### Debian/Ubuntu
-* Only for 32-bit engine on 64-bit x86 operating system:
-  * Enable i386 on your system: `$ sudo dpkg --add-architecture i386`.
-  * Install `aptitude` ([why?](https://github.com/FWGS/xash3d-fwgs/issues/1828#issuecomment-2415131759)):  `$ sudo apt update && sudo apt upgrade && sudo apt install aptitude`
-  * Install development tools: `$ sudo aptitude --without-recommends install git build-essential gcc-multilib g++-multilib libsdl2-dev:i386 libfreetype-dev:i386 libopus-dev:i386 libbz2-dev:i386 libvorbis-dev:i386 libopusfile-dev:i386 libogg-dev:i386`.
-  * Set PKG_CONFIG_PATH environment variable to point at 32-bit libraries: `$ export PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig`.
+**Visuals**
+- Notes and some UI elements can be small and hard to read.
 
-* For 64-bit engine on 64-bit x86 and other non-x86 systems:
-  * Install development tools: `$ sudo apt install git build-essential python libsdl2-dev libfreetype6-dev libopus-dev libbz2-dev libvorbis-dev libopusfile-dev libogg-dev`.
+**Dual wielding and weapons**
+- Arm and sleeve cutting on the left hand is not perfect. A nightstick in the left hand shows the whole arm.
 
-* Clone this repostory: `$ git clone --recursive https://github.com/FWGS/xash3d-fwgs`.
+**Movement**
+- Walking can feel slow for a few seconds after saving at a tape recorder.
+- Walking jank
 
-##### RedHat/Fedora
-* Only for 32-bit engine on 64-bit x86 operating system:
-  * Install development tools: `$ sudo dnf install git gcc gcc-c++ glibc-devel.i686 SDL3-devel.i686 sdl2-compat-devel.i686 opus-devel.i686 freetype-devel.i686 bzip2-devel.i686 libvorbis-devel.i686 opusfile-devel.i686 libogg-devel.i686 libatomic.i686`.
-  * Set PKG_CONFIG_PATH environment variable to point at 32-bit libraries: `$ export PKG_CONFIG_PATH=/usr/lib/pkgconfig`.
+**Hardware**
+- Only tested on a Quest 2 through SteamVR. Other headsets and controllers are untested.
+- Windows only.
 
-* For 64-bit engine on 64-bit x86 and other non-x86 systems:
-  * Install development tools: `$ sudo dnf install git gcc gcc-c++ SDL3-devel sdl2-compat-devel opus-devel freetype-devel bzip2-devel libvorbis-devel opusfile-devel libogg-devel`.
+## Performance and settings tips
 
-* Clone this repostory: `$ git clone --recursive https://github.com/FWGS/xash3d-fwgs`.
+All settings are console commands (open the console in-game) and are saved.
 
-#### Android (Windows/Linux/macOS)
-* Install [Android Studio](https://developer.android.com/studio) (or the command line tools).
-* Install [Python](https://python.org) (at least 2.7, latest is better).
-* Install [Git](https://git-scm.com/download/win).
-* Install [Ninja](https://ninja-build.org/).
-* Install [CMake](https://cmake.org/) (for some dependencies).
+## Disclaimers
 
-* Clone this repostory: `$ git clone --recursive https://github.com/FWGS/xash3d-fwgs`.
+- This is an **unofficial, fan-made, non-commercial** project. It is **not affiliated with, endorsed by, or supported by** the Cry of Fear developers or any rights holder.
+- **Cry of Fear** was created by Team Psykskallar. All of its content, characters, music and assets belong to their owners. This release contains **no Cry of Fear game files**; you must own and install the game from Steam.
+- The mod works by loading the game's own libraries and **modifying them in memory while the game runs**. It does not change the original files, but it is only expected to work with the Steam version of the game that it was tested on.
+- Use at your own risk. The software is provided **as is**, without warranty. Back up your saves before installing.
 
-#### iOS/iPadOS
-* Install Xcode from the appstore.
-* Install [Homebrew package manager](https://brew.sh).
+## Credits and licences
 
-* Install build dependencies by running: `brew install python`.
-
-* Clone the SDL2 repo `$ git clone --recursive https://github.com/libsdl-org/SDL.git -b SDL2` and compile the iOS framework by navigating to SDL/Xcode/SDL and opening the Xcode project.
-
-* Clone this repository: `$ git clone --recursive https://github.com/FWGS/xash3d-fwgs`.
-
-### Building
-#### Windows (Visual Studio)
-0) Open command line.
-1) Navigate to `xash3d-fwgs` directory.
-2) (optional) Examine which build options are available: `waf --help`.
-3) Configure build: `waf configure --sdl2=c:/path/to/SDL2`.
-4) Compile: `waf build`.
-5) Install: `waf install --destdir=c:/path/to/any/output/directory`.
-
-#### Linux
-If compiling 32-bit on amd64, make sure `PKG_CONFIG_PATH` from the previous step is set correctly, prior to running configure.
-
-0) (optional) Examine which build options are available: `./waf --help`.
-1) Configure build: `./waf configure` (you need to pass `-8` to compile 64-bit engine on 64-bit x86 processor).
-2) Compile: `./waf build`.
-3) Install: `./waf install --destdir=/path/to/any/output/directory`.
-
-#### Android (Windows/Linux/macOS)
-To build you should clone [SDL](https://github.com/libsdl-org/SDL) from `SDL2` branch and [HLSDK-portable](https://github.com/FWGS/hlsdk-portable) `mobile-hacks` branch repositories to 3rdparty folder, after that you should be able to open the project in Android Studio from `android` directory or manually call Gradle to build the APK.
-
-#### iOS/iPadOS (MacOS only)
-0) (optional) Examine which build options are available: `./waf --help`.
-1) Configure build: `./waf configure --ios --enable-bundled-deps --sdl2 (path/to/SDL2.framework)`, set `--ios-simulator` instead of `--ios` if you want to build for simulator.
-2) Compile `./waf build`.
-3) Navigate to `build` and copy your compiled SDL2.framework there, then add your game dylibs to `build/ios/libs/(gamedir)/(dlls/cl_dlls)`(You can also run `scripts/ios/buildhlsdk.sh` instead to automatically create an ipa with hlsdk dylibs)
-4) Run `scripts/ios/createipa.sh` to create an installable ipa
-
-### Running tests
-
-Tests are enabled with `--enable-tests` passed to `./waf configure` and can be run with `./waf --alltests`.
-
-This builds both standalone unit tests and a separate engine test binary (`xash3d_tests`) that embeds engine-level tests. The engine test binary requires no game assets.
+- **Cry of Fear** by Team Psykskallar.
+- **Xash3D FWGS** engine by the Xash3D FWGS team, licensed under the **GNU GPL v3**.
+- **OpenVR** by Valve Software is used to talk to SteamVR.
+- **cof-enhanced** by hajdawery for a headstart into porting Cry Of Fear into the Xash3D engine
+- VR port and changes by **thumbgaming**
+- Claude 
