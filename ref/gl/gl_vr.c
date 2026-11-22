@@ -1147,7 +1147,19 @@ static float VR_SwingHand( int hand, const ref_viewpass_t *game, const vec3_t ey
 
 				if( VR_FindMeleeTarget( a, b, target ))
 				{
+					// A creature in the way. The game's own hit looks from the player's eye along a line only 32 units long
+					// (40 for the axe), far less than an arm reaches. So the hit is made from just before the creature, along the
+					// line from the weapon tip to it, exactly like a touched surface
+					vec3_t cd;
+
 					hit = true;
+					VectorSubtract( target, tip, cd );
+
+					if( VectorNormalizeLength( cd ) > 1.0f )
+					{
+						VR_PublishContact( hand, true, target, cd );
+						contact_published = true;
+					}
 				}
 				else
 				{

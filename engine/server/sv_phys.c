@@ -237,6 +237,7 @@ extern double vr_melee_window_until;	// in_vr.c: a real VR swing has just begun
 extern convar_t vr_melee_instant;
 extern qboolean vr_melee_override;
 extern qboolean vr_melee_dbg;
+extern qboolean vr_melee_think_seen;
 extern vec3_t vr_melee_eye;
 extern float vr_melee_pitch, vr_melee_yaw;
 extern double vr_melee_override_until;
@@ -266,6 +267,7 @@ static void SV_VRMeleeInstant( edict_t *player )
 	// the hit
 	if( player->v.nextthink > sv.time + sv.frametime && player->v.nextthink < sv.time + 0.6f )
 		player->v.nextthink = sv.time + 0.001f;
+		vr_melee_think_seen = true;
 
 	// the wait between two attacks of the weapons the player holds: cut ONCE per swing. The attack button stays pressed for a
 	// moment after a swing, so cutting the wait on every frame made the weapon attack twice (two hits for one swing)
@@ -346,7 +348,18 @@ qboolean SV_PlayerRunThink( edict_t *ent, float frametime, double time )
 			ent->v.v_angle[ROLL] = 0.0f;
 
 			if( vr_melee_dbg )
-				Con_Printf( "VR melee: the game's hit was made from the point the weapon touched\n" );
+			{
+				// what the game's own line trace (32 units from the eye along the view) will meet
+				vec3_t fwd, end;
+				trace_t mt;
+
+				AngleVectors( ent->v.v_angle, fwd, NULL, NULL );
+				VectorMA( vr_melee_eye, 32.0f, fwd, end );
+				mt = SV_Move( vr_melee_eye, vec3_origin, vec3_origin, end, MOVE_NORMAL, ent, false );
+
+				Con_Printf( "VR melee: the game's hit trace %s: '%s' (distance %.0f, health %.0f)\n", mt.fraction < 1.0f ? "meets" : "meets nothing",
+					mt.fraction < 1.0f && mt.ent ? SV_ClassName( mt.ent ) : "-", mt.fraction * 32.0f, mt.fraction < 1.0f && mt.ent ? mt.ent->v.health : 0.0f );
+			}
 
 			ret = SV_PlayerRunThinkInternal( ent, frametime, time );
 

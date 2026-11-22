@@ -211,6 +211,8 @@ static double vr_swing_pending_until, vr_lswing_pending_until;
 // read by the server (sv_phys.c): for the hit of a swing, the player looks from this point along this direction
 qboolean vr_melee_override;
 qboolean vr_melee_dbg;
+qboolean vr_melee_think_seen;	// the game has started the hit of the attack (set by the server)
+double vr_melee_fire_time;
 vec3_t vr_melee_eye;
 float vr_melee_pitch, vr_melee_yaw;
 double vr_melee_override_until;
@@ -1569,6 +1571,8 @@ static qboolean IN_VRMeleeAssist( float rel, float pitch, float *orel, float *op
 // (which it makes 0.3 s late) is brought forward
 static void IN_VRSwingFire( qboolean left )
 {	vr_melee_dbg = vr_melee_debug.value > 0.5f;
+	vr_melee_fire_time = host.realtime;
+	vr_melee_think_seen = false;
 
 	if( vr_melee_dbg )
 		Con_Printf( "VR melee: attack sent (%s hand, contact %s)\n", left ? "left" : "right", ( left ? vr_in_lswing_contact.value : vr_in_swing_contact.value ) > 0.5f ? "yes" : "no, a creature was in range" );
@@ -1870,6 +1874,16 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 				vr_lswing_pending = true;
 				vr_lswing_pending_until = host.realtime + 0.4;
 			}
+		}
+
+		// The game only starts the hit of an attack when its weapon is ready: the attack of the last swing must be over (the
+		// cooldown of the weapon). An attack sent too early is ignored by the game: this says so
+		if( vr_melee_fire_time > 0.0 && host.realtime - vr_melee_fire_time > 0.3 )
+		{
+			if( vr_melee_debug.value > 0.5f && !vr_melee_think_seen )
+				Con_Printf( "VR melee: the game did not start a hit for the last attack (the weapon was still busy with the last swing)\n" );
+
+			vr_melee_fire_time = 0.0;
 		}
 
 		// a swing that is waiting: it attacks the moment the weapon touches something, and is dropped when the hand slows down

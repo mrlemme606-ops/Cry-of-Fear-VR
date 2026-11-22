@@ -590,10 +590,6 @@ static void SV_SetupPMove( playermove_t *pmove, sv_client_t *cl, usercmd_t *ucmd
 
 #if !XASH_DEDICATED
 extern void VR_CrouchFixView( playermove_t *pm );
-extern qboolean vr_melee_override, vr_melee_dbg;
-extern vec3_t vr_melee_eye;
-extern float vr_melee_pitch, vr_melee_yaw;
-extern double vr_melee_override_until;
 #endif
 
 static void SV_FinishPMove( playermove_t *pmove, sv_client_t *cl )
@@ -1015,32 +1011,6 @@ void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, int random_seed )
 	svgame.globals->frametime = frametime;
 
 	// run post-think
-#if !XASH_DEDICATED
-	// The weapon makes its hit trace here, in the post-think of the command that has the attack button down (not only in the
-	// later think): for that trace the eye is the point where the weapon touched something and the view is the direction
-	// into that surface (see vr_melee_override in in_vr.c)
-	if( vr_melee_override && NUM_FOR_EDICT( clent ) == 1 && host.realtime <= vr_melee_override_until && FBitSet( clent->v.button, IN_ATTACK ))
-	{
-		vec3_t save_ofs, save_ang;
-
-		VectorCopy( clent->v.view_ofs, save_ofs );
-		VectorCopy( clent->v.v_angle, save_ang );
-
-		VectorSubtract( vr_melee_eye, clent->v.origin, clent->v.view_ofs );
-		clent->v.v_angle[PITCH] = vr_melee_pitch;
-		clent->v.v_angle[YAW] = vr_melee_yaw;
-		clent->v.v_angle[ROLL] = 0.0f;
-
-		if( vr_melee_dbg )
-			Con_Printf( "VR melee: the attack of the weapon was made from the point it touched\n" );
-
-		svgame.dllFuncs.pfnPlayerPostThink( clent );
-
-		VectorCopy( save_ofs, clent->v.view_ofs );
-		VectorCopy( save_ang, clent->v.v_angle );
-	}
-	else
-#endif
 	svgame.dllFuncs.pfnPlayerPostThink( clent );
 	svgame.dllFuncs.pfnCmdEnd( clent );
 
