@@ -180,4 +180,19 @@ void VR_CenterFinish( void );
 const float *VR_ReloadRightOffsets( void );
 qboolean VR_ReloadLeftDraw( vr_rl_left_t *d );
 
+// weapon colliders: VR native melee (gl_vr_melee.c)
+extern convar_t vr_hb_x, vr_hb_y, vr_hb_z, vr_hb_sx, vr_hb_sy, vr_hb_sz, vr_hb_pitch, vr_hb_yaw, vr_hb_roll, vr_hb_dmg;
+extern convar_t vr_hbl_x, vr_hbl_y, vr_hbl_z, vr_hbl_sx, vr_hbl_sy, vr_hbl_sz, vr_hbl_pitch, vr_hbl_yaw, vr_hbl_roll;
+void VR_MeleeInitCvars( void );
+void VR_MeleeFrame( void );
+void VR_MeleePushback( int hand, vec3_t out );
+qboolean VR_HitboxDebug( void );
+void VR_DrawMeleeDebug( void );
+qboolean VR_HbFitWanted( void );
+void VR_HbFitAccum( const float *p );
+void VR_HbFitFinish( void );
+qboolean VR_WeaponBasis( int hand, vec3_t grip, vec3_t f, vec3_t l, vec3_t u );
+float VR_WorldScale( void );
+qboolean VR_IsMeleeModel( const char *base );
+
 #endif // GL_VR_H

@@ -2039,6 +2039,7 @@ static void R_VRAdjustBones( void )
 		return;
 
 	VR_CenterFinish();
+	VR_HbFitFinish();
 	VR_ReloadZoneFlush();
 
 	if( !VR_ReloadBoltOffset( off ))
@@ -2214,6 +2215,21 @@ static void R_StudioDrawPoints( void )
 			{
 				if( pvertbone[i] < nb && !arm[pvertbone[i]] )
 					VR_CenterAccum( g_studio.verts[i] );
+			}
+		}
+
+		// the weapon collider fits itself to the mesh of the weapon (not the arms)
+		if( RI.currententity == tr.viewent && VR_HbFitWanted( ))
+		{
+			byte arm[MAXSTUDIOBONES];
+
+			for( int b = 0; b < nb; b++ )
+				arm[b] = bonehide[b] || !Q_strnicmp( vrbones[b].name, "r_", 2 ) || !Q_strnicmp( vrbones[b].name, "l_", 2 );
+
+			for( int i = 0; i < numverts; i++ )
+			{
+				if( pvertbone[i] < nb && !arm[pvertbone[i]] )
+					VR_HbFitAccum( g_studio.verts[i] );
 			}
 		}
 

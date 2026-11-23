@@ -225,8 +225,6 @@ static CVAR_DEFINE_AUTO( vr_vm_cap_radius, "0", FCVAR_ARCHIVE, "size of the disc
 static CVAR_DEFINE_AUTO( vr_vm_cap_gray, "0.1", FCVAR_ARCHIVE, "brightness of that disc, 0 = black, 1 = white" );
 static CVAR_DEFINE_AUTO( vr_static_models, "mobile+flashlight+flare+lantern+syringe+camera+radio", 0, "weapon model names (part of the file name) whose animations never play, the model stays in one pose in your hand. Separate with +" );
 static CVAR_DEFINE_AUTO( vr_melee_models, "fist+actions+axe+branch+nightstick+sledge+pickaxe+shovel+switchblade", 0, "weapon model names (part of the file name) that are swung by hand. Separate with +" );
-static CVAR_DEFINE_AUTO( vr_melee_tip, "18", FCVAR_ARCHIVE, "how far beyond your hand the tip of a melee weapon is, in units (swings are traced from there)" );
-static CVAR_DEFINE_AUTO( vr_melee_reach, "64", FCVAR_ARCHIVE, "how far in front of your swinging hand the game looks for something to hit, in units" );
 static CVAR_DEFINE_AUTO( vr_omni_models, "flare+lantern", 0, "weapon model names that light up everything around your hand (flare, lantern). Separate with +" );
 static CVAR_DEFINE_AUTO( vr_lhand, "1", FCVAR_ARCHIVE, "1 = a left hand is drawn at your left controller" );
 static CVAR_DEFINE_AUTO( vr_lhand_model, "models/weapons/switchblade/v_switchblade.mdl", 0, "weapon model whose left arm is used as the left hand" );
@@ -276,12 +274,6 @@ static CVAR_DEFINE_AUTO( vr_dual_clip_tex, "", FCVAR_ARCHIVE, "extra texture nam
 static CVAR_DEFINE_AUTO( vr_dual_anim_hold, "idle+draw+holster+equip+deploy+reload+pull+hide+show+inspect+fidget+lean+sprint+walk+run", FCVAR_ARCHIVE, "animation names (part of the name, separated by +) that a gun on the left hand does NOT play" );
 static CVAR_DEFINE_AUTO( vr_dual_anim_play, "shoot+fire+shot", FCVAR_ARCHIVE, "parts of the animation names of the left weapon that are allowed to play. Everything else (idle, draw, melee, reload...) holds the first idle pose" );
 static CVAR_DEFINE_AUTO( vr_dual_builtin, "1", FCVAR_ARCHIVE, "1 = the left weapon of a dual wield is drawn by the engine's own studio renderer (it then turns with your hand). 0 = the game's renderer" );
-static CVAR_DEFINE_AUTO( vr_melee_blade, "1", FCVAR_ARCHIVE, "1 = a swing is traced from the tip along the way the weapon is drawn, 0 = along the controller" );
-static CVAR_DEFINE_AUTO( vr_melee_slack, "8", FCVAR_ARCHIVE, "how far ahead of the weapon tip (units) something counts as touched by a swing" );
-static CVAR_DEFINE_AUTO( vr_melee_aim, "1", FCVAR_ARCHIVE, "1 = a swing is aimed at where the tip of the weapon is. 0 = the old way, along the direction of the swing" );
-static CVAR_DEFINE_AUTO( vr_melee_radius, "10", FCVAR_ARCHIVE, "how far (game units) from the path of the weapon a creature still counts as hit by the swing" );
-static CVAR_DEFINE_AUTO( vr_melee_predict, "70", FCVAR_ARCHIVE, "how far (game units) along the swing the search for a creature goes" );
-static CVAR_DEFINE_AUTO( vr_melee_lead, "6", FCVAR_ARCHIVE, "how far ahead of the tip (game units, along the swing) a swing is aimed" );
 static CVAR_DEFINE_AUTO( vr_hand_collide, "0", 0, "1 = the weapon in your hand is pushed back by walls instead of going through them" );
 static CVAR_DEFINE_AUTO( vr_hand_reach, "18", FCVAR_ARCHIVE, "how far in front of the hand the weapon counts as touching a wall (units)" );
 static CVAR_DEFINE_AUTO( vr_anim_play, "shoot+fire+reload+shot", FCVAR_ARCHIVE, "animations of a weapon that play (part of the animation name, separated by +). All others hold the idle pose. A weapon can have its own choice (vr_anim_toggle, saved with vr_weapon_save)" );
@@ -478,8 +470,6 @@ void VR_InitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_vm_cap_gray );
 	gEngfuncs.Cvar_RegisterVariable( &vr_melee_models );
 	gEngfuncs.Cvar_RegisterVariable( &vr_static_models );
-	gEngfuncs.Cvar_RegisterVariable( &vr_melee_tip );
-	gEngfuncs.Cvar_RegisterVariable( &vr_melee_reach );
 	gEngfuncs.Cvar_RegisterVariable( &vr_melee_freeze );
 	gEngfuncs.Cvar_RegisterVariable( &vr_muzzle_x );
 	gEngfuncs.Cvar_RegisterVariable( &vr_muzzle_y );
@@ -493,10 +483,6 @@ void VR_InitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_roll );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_scale );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hand_collide );
-	gEngfuncs.Cvar_RegisterVariable( &vr_melee_aim );
-	gEngfuncs.Cvar_RegisterVariable( &vr_melee_lead );
-	gEngfuncs.Cvar_RegisterVariable( &vr_melee_radius );
-	gEngfuncs.Cvar_RegisterVariable( &vr_melee_predict );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_builtin );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_cut );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_cut_pitch );
@@ -515,8 +501,6 @@ void VR_InitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_lh_cut_bone );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_muzzle );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_own );
-	gEngfuncs.Cvar_RegisterVariable( &vr_melee_slack );
-	gEngfuncs.Cvar_RegisterVariable( &vr_melee_blade );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hand_reach );
 	gEngfuncs.Cvar_RegisterVariable( &vr_anim_play );
 	gEngfuncs.Cvar_RegisterVariable( &vr_anim_mask );
@@ -612,6 +596,7 @@ void VR_InitCvars( void )
 	VR_CofInitCvars();
 	VR_InputInitCvars();
 	VR_ReloadInitCvars();
+	VR_MeleeInitCvars();
 	VR_UIInitCvars();
 	gEngfuncs.Cmd_AddCommand( "vr_vm_center", VR_Center_f, "put the middle of the weapon in your hand. vr_vm_center <size> also sizes it (size = length in units)" );
 	gEngfuncs.Cmd_AddCommand( "vr_vm_info", VR_VMInfo_f, "print what the game says about the weapon model in hand (scale, size, auto-fit) - for weapons that look wrong" );
@@ -1001,250 +986,22 @@ static void VR_HideCrosshair( void )
 static void VR_RotateAxis( vec3_t v, const vec3_t axis, float degrees );
 static void VR_PublishDual( const ref_viewpass_t *game );
 
-// How fast a hand moves (relative to the head, from the controller's own velocity: no smoothing, so a swing is seen
-// at once) and where it hits. The trace starts at the tip of the weapon, not at the hand, and goes the way the hand
-// moves: that is what gets hit, and what the game aims at while the swing goes on.
-// The enemy a swing is going for: the tip of the weapon moves along a line (from where it is now, on along the swing),
-// and the first creature whose body that line passes through (with some margin) is the target. The game then gets an aim
-// at the middle of that creature, so its own hit trace cannot miss it the way it did with a plain aim along the swing
-static qboolean VR_FindMeleeTarget( const vec3_t from, const vec3_t to, vec3_t center )
-{
-	float best = 1.0e9f, margin = vr_melee_radius.value;
-	qboolean found = false;
-	int i, n;
-
-	if( !tr.draw_list )
-		return false;
-
-	n = tr.draw_list->num_solid_entities + tr.draw_list->num_trans_entities;
-
-	for( i = 0; i < n; i++ )
-	{
-		cl_entity_t *e = ( i < tr.draw_list->num_solid_entities ) ? tr.draw_list->solid_entities[i] : tr.draw_list->trans_entities[i - tr.draw_list->num_solid_entities];
-		vec3_t bmin, bmax, c, d;
-		float t0 = 0.0f, t1 = 1.0f, dist;
-		int k;
-
-		if( !e || e == tr.viewent || e->player || !e->model || e->model->type != mod_studio )
-			continue;
-
-		// something that walks and has a body (monsters), not props
-		if( e->curstate.solid != SOLID_SLIDEBOX && e->curstate.movetype != MOVETYPE_STEP )
-			continue;
-
-		for( k = 0; k < 3; k++ )
-		{
-			bmin[k] = e->origin[k] + e->curstate.mins[k] - margin;
-			bmax[k] = e->origin[k] + e->curstate.maxs[k] + margin;
-			c[k] = e->origin[k] + ( e->curstate.mins[k] + e->curstate.maxs[k] ) * 0.5f;
-			d[k] = to[k] - from[k];
-		}
-
-		// the line against the box (slab test)
-		for( k = 0; k < 3; k++ )
-		{
-			if( fabs( d[k] ) < 1.0e-5f )
-			{
-				if( from[k] < bmin[k] || from[k] > bmax[k] )
-					break;
-			}
-			else
-			{
-				float a = ( bmin[k] - from[k] ) / d[k], b = ( bmax[k] - from[k] ) / d[k], tmp;
-
-				if( a > b ) { tmp = a; a = b; b = tmp; }
-				if( a > t0 ) t0 = a;
-				if( b < t1 ) t1 = b;
-				if( t0 > t1 ) break;
-			}
-		}
-
-		if( k < 3 )
-			continue;
-
-		dist = VectorDistance( from, c );
-
-		if( dist < best )
-		{
-			best = dist;
-			VectorCopy( c, center );
-			found = true;
-		}
-	}
-
-	return found;
-}
-
-static void VR_PublishContact( int hand, qboolean contact, const vec3_t point, const vec3_t dir )
-{
-	static const char *names[2][7] =
-	{
-		{ "vr_in_lswing_contact", "vr_in_lswing_cx", "vr_in_lswing_cy", "vr_in_lswing_cz", "vr_in_lswing_dx", "vr_in_lswing_dy", "vr_in_lswing_dz" },
-		{ "vr_in_swing_contact", "vr_in_swing_cx", "vr_in_swing_cy", "vr_in_swing_cz", "vr_in_swing_dx", "vr_in_swing_dy", "vr_in_swing_dz" }
-	};
-	const char **n = names[hand ? 1 : 0];
-
-	gEngfuncs.Cvar_SetValue( n[0], contact ? 1.0f : 0.0f );
-
-	if( !contact )
-		return;
-
-	gEngfuncs.Cvar_SetValue( n[1], point[0] );
-	gEngfuncs.Cvar_SetValue( n[2], point[1] );
-	gEngfuncs.Cvar_SetValue( n[3], point[2] );
-	gEngfuncs.Cvar_SetValue( n[4], dir[0] );
-	gEngfuncs.Cvar_SetValue( n[5], dir[1] );
-	gEngfuncs.Cvar_SetValue( n[6], dir[2] );
-}
-
-static float VR_SwingHand( int hand, const ref_viewpass_t *game, const vec3_t eye, float d, const char *cv_pitch, const char *cv_yaw, const char *cv_hit )
+// How fast a hand moves (m/s, relative to the head, from the controller's own velocity: no smoothing, so a swing is seen
+// at once). Used for the sounds and the pistol whip checks; what a weapon hits is decided by its collider (gl_vr_melee.c)
+static float VR_HandSpeed( int hand )
 {
 	uint32_t dev = VR_InputGetDevice( hand );
-	vec3_t tmp, dir, tip, target;
-	float speed = 0.0f, pitch, yaw;
-	qboolean hit = false, contact_published = false;
 
 	if( !vr.hand[hand].valid || dev >= VR_MAX_DEVICES || !vr.poses[dev].bPoseIsValid )
-	{
-		gEngfuncs.Cvar_SetValue( cv_hit, 0.0f );
-		VR_PublishContact( hand, false, vec3_origin, vec3_origin );
 		return 0.0f;
-	}
 
 	{
 		const float *hv = vr.poses[dev].vVelocity.v;
 		const float *kv = vr.poses[VR_HMD_INDEX].vVelocity.v;
 		float rel[3] = { hv[0] - kv[0], hv[1] - kv[1], hv[2] - kv[2] };
 
-		speed = sqrt( rel[0] * rel[0] + rel[1] * rel[1] + rel[2] * rel[2] );
-
-		if( speed > 0.3f )
-		{
-			VR_ConvDir( rel, tmp );
-			VectorScale( tmp, 1.0f / speed, tmp );
-			VR_RotateZ( tmp, d, dir );
-
-			{
-				// the tip is where the blade really points (the way the weapon is drawn), not where the controller points: a
-				// knife held tilted in the hand used to be touched with a point below its visible blade
-				vec3_t tdir, wf, wl, wu;
-
-				VectorCopy( vr.hand[hand].fwd, tdir );
-
-				if( hand == 1 && vr_melee_blade.value && VR_GetViewModelAxes( wf, wl, wu ))
-					VectorCopy( wf, tdir );
-
-				VectorMA( vr.hand[hand].pos, vr_melee_tip.value, tdir, tip );
-			}
-
-			if( vr_melee_aim.value )
-			{
-				vec3_t a, b;
-
-				// the swing goes on from the tip: look for a creature on that path (a little behind, and ahead)
-				VectorMA( tip, -8.0f, dir, a );
-				VectorMA( tip, vr_melee_predict.value, dir, b );
-
-				if( VR_FindMeleeTarget( a, b, target ))
-				{
-					// A creature in the way. The game's own hit looks from the player's eye along a line only 32 units long
-					// (40 for the axe), far less than an arm reaches. So the hit is made from just before the creature, along the
-					// line from the weapon tip to it, exactly like a touched surface
-					vec3_t cd;
-
-					hit = true;
-					VectorSubtract( target, tip, cd );
-
-					if( VectorNormalizeLength( cd ) > 1.0f )
-					{
-						VR_PublishContact( hand, true, target, cd );
-						contact_published = true;
-					}
-				}
-				else
-				{
-					// Contact: the tip of the weapon, from where it was a frame ago to a little ahead of where it is now, is
-					// traced against the world and everything solid (boards, crates, doors, walls, bodies). If it touches
-					// something, that is what the swing is aimed at, exactly. If it touches nothing, the swing hits nothing
-					static vec3_t prev_tip[2];
-					static qboolean prev_ok[2];
-					vec3_t s0, e0, sd;
-					float sl;
-
-					VectorMA( tip, vr_melee_slack.value, dir, e0 );
-					VectorCopy( prev_ok[hand] ? prev_tip[hand] : tip, s0 );
-
-					if( !prev_ok[hand] )
-						VectorMA( tip, -8.0f, dir, s0 );
-
-					VectorSubtract( e0, s0, sd );
-					sl = VectorLength( sd );
-
-					if( sl > 120.0f )
-					{
-						VectorMA( tip, -8.0f, dir, s0 );
-						VectorSubtract( e0, s0, sd );
-						sl = VectorLength( sd );
-					}
-
-					// The world itself (entity 0: the walls, floor and ceiling around you) is not something to attack: in a small room
-					// the weapon is always touching it, which made every swing "hit" the concrete. Only other things count:
-					// boards, doors, crates, creatures
-					if( sl > 0.5f && VR_TraceRay( s0, sd, sl, eye, target ) && vr_dbg_ent > 0 )
-					{
-						vec3_t contact;
-
-						VectorScale( sd, 1.0f / sl, sd );
-						VectorCopy( target, contact );
-						VectorMA( target, 3.0f, sd, target );
-
-						// The game's hit must run straight into the surface that was touched. A swing along a long board
-						// (right to left) has a direction along the board: a hit going that way grazes the board and ends at the
-						// wall behind it. Into the surface, it cannot miss
-						if( DotProduct( vr_dbg_normal, vr_dbg_normal ) > 0.5f && DotProduct( vr_dbg_normal, sd ) < -0.05f )
-							VectorNegate( vr_dbg_normal, sd );
-						hit = true;
-						VR_PublishContact( hand, true, contact, sd );
-						contact_published = true;
-
-						if( gEngfuncs.pfnGetCvarFloat( "vr_melee_debug" ) > 0.5f )
-						{
-							static double next_print;
-
-							if( gp_host->realtime > next_print )
-							{
-								next_print = gp_host->realtime + 0.25;
-								struct physent_s *pe = gEngfuncs.EV_GetPhysent( vr_dbg_ent );
-
-								gEngfuncs.Con_Printf( "VR melee: %s hand touched '%s' (entity %d of the trace, at %.0f %.0f %.0f, swing speed %.0f)\n",
-									hand ? "right" : "left", pe ? (const char *)pe : "?", vr_dbg_ent, contact[0], contact[1], contact[2], speed );
-							}
-						}
-					}
-					else
-						VectorMA( tip, vr_melee_lead.value, dir, target );
-
-					VectorCopy( tip, prev_tip[hand] );
-					prev_ok[hand] = true;
-				}
-			}
-			else
-			{
-				hit = VR_TraceRay( tip, dir, vr_melee_reach.value, eye, target );
-			}
-
-			VR_AimAngles( eye, target, game->viewangles[YAW], &pitch, &yaw );
-
-			gEngfuncs.Cvar_SetValue( cv_pitch, pitch );
-			gEngfuncs.Cvar_SetValue( cv_yaw, yaw );
-		}
+		return sqrt( rel[0] * rel[0] + rel[1] * rel[1] + rel[2] * rel[2] );
 	}
-
-	if( !contact_published )
-		VR_PublishContact( hand, false, tip, tip );
-
-	gEngfuncs.Cvar_SetValue( cv_hit, hit ? 1.0f : 0.0f );
-	return speed;
 }
 
 static vec3_t vr_game_origin;
@@ -1359,10 +1116,13 @@ static void VR_PublishAim( const ref_viewpass_t *game )
 
 	// swing: hand velocity relative to the head, so walking around does not count. Both hands: the right one swings the
 	// weapon you hold, the left one throws punches or swings the weapon in the left hand
-	speed = VR_SwingHand( 1, game, eye, d, "vr_in_swing_pitch", "vr_in_swing_yaw", "vr_in_swing_hit" );
+	speed = VR_HandSpeed( 1 );
 	gEngfuncs.Cvar_SetValue( "vr_in_hand_speed", speed );
-	gEngfuncs.Cvar_SetValue( "vr_in_lhand_speed", VR_SwingHand( 0, game, eye, d, "vr_in_lswing_pitch", "vr_in_lswing_yaw", "vr_in_lswing_hit" ));
+	gEngfuncs.Cvar_SetValue( "vr_in_lhand_speed", VR_HandSpeed( 0 ));
 	VR_PublishDual( game );
+
+	// the weapon colliders: sweep, hit, block
+	VR_MeleeFrame();
 
 	if( vr_aim_debug.value && ++vr.aim_debug_frames >= 72 )
 	{
@@ -1563,6 +1323,14 @@ qboolean VR_GetViewModelPose( vec3_t origin, vec3_t angles )
 
 		if( !wall.startsolid && wall.fraction < 1.0f )
 			VectorMA( origin, -( 1.0f - wall.fraction ) * vr_hand_reach.value, bf, origin );
+	}
+
+	// the weapon collider pushes the weapon back out of walls, doors, planks and monsters, and bounces it off what it hits
+	{
+		vec3_t pb;
+
+		VR_MeleePushback( 1, pb );
+		VectorAdd( origin, pb, origin );
 	}
 
 	xy = sqrt( bf[0] * bf[0] + bf[1] * bf[1] );
@@ -2276,7 +2044,9 @@ static convar_t *vr_tune_vars[] =
 	&vr_light_pitch, &vr_light_yaw, &vr_vm_mirror, &vr_aim_pitch, &vr_aim_yaw, &vr_anim_mask, &vr_rl_grip_radius, &vr_rl_grip_x, &vr_rl_grip_y, &vr_rl_grip_z, &vr_muzzle_x, &vr_muzzle_y, &vr_muzzle_z,
 	// the cut of the left hand gripping the weapon (sniper rifle, M4...): saved per weapon with vr_weapon_save
 	&vr_lh_arm_cut, &vr_lh_cut_pitch, &vr_lh_cut_yaw,
-	&vr_grip_cut, &vr_grip_cut_pitch, &vr_grip_cut_yaw
+	&vr_grip_cut, &vr_grip_cut_pitch, &vr_grip_cut_yaw,
+	// the weapon collider (gl_vr_melee.c): saved per weapon, pistol whip boxes of guns included
+	&vr_hb_x, &vr_hb_y, &vr_hb_z, &vr_hb_sx, &vr_hb_sy, &vr_hb_sz, &vr_hb_pitch, &vr_hb_yaw, &vr_hb_roll, &vr_hb_dmg
 };
 
 #define VR_TUNE_COUNT ( (int)( sizeof( vr_tune_vars ) / sizeof( vr_tune_vars[0] )))
@@ -2438,7 +2208,8 @@ static float VR_WeaponNumber( const char *base, const char *key, float def )
 // the left hand weapon of a dual wield has its own settings per weapon (vr_dual_x ... vr_dual_scale), saved with
 // vr_weapon_save_left in vr_weaponleft_<weapon>.cfg and loaded again whenever that weapon is in the left hand
 
-static const char *vr_dual_keys[] = { "vr_dual_x", "vr_dual_y", "vr_dual_z", "vr_dual_pitch", "vr_dual_yaw", "vr_dual_roll", "vr_dual_scale", "vr_dual_cut", "vr_dual_cut_pitch", "vr_dual_cut_yaw" };
+static const char *vr_dual_keys[] = { "vr_dual_x", "vr_dual_y", "vr_dual_z", "vr_dual_pitch", "vr_dual_yaw", "vr_dual_roll", "vr_dual_scale", "vr_dual_cut", "vr_dual_cut_pitch", "vr_dual_cut_yaw",
+	"vr_hbl_x", "vr_hbl_y", "vr_hbl_z", "vr_hbl_sx", "vr_hbl_sy", "vr_hbl_sz", "vr_hbl_pitch", "vr_hbl_yaw", "vr_hbl_roll" };
 
 static void VR_DualFileName( const char *model, char *out, size_t size )
 {
@@ -2517,7 +2288,7 @@ static void VR_DualLoadSettings( const char *model )
 
 static void VR_WeaponSaveLeft_f( void )
 {
-	char text[512], file[96];
+	char text[1536], file[96];
 	int i, len = 0;
 
 	if( !vr_dual_model[0] )
@@ -2581,6 +2352,13 @@ static qboolean VR_GetDualPose( const char *model, vec3_t origin, float *vang, f
 	VectorMA( origin, -gy, bl, origin );
 	VectorMA( origin, -gz, bu, origin );
 
+	{
+		vec3_t pb;
+
+		VR_MeleePushback( 0, pb );
+		VectorAdd( origin, pb, origin );
+	}
+
 	xy = sqrt( bf[0] * bf[0] + bf[1] * bf[1] );
 	pitch = RAD2DEG( atan2( -bf[2], xy ));
 	yaw = RAD2DEG( atan2( bf[1], bf[0] ));
@@ -2591,6 +2369,83 @@ static qboolean VR_GetDualPose( const char *model, vec3_t origin, float *vang, f
 	vang[1] = yaw;
 	vang[2] = roll;
 	return true;
+}
+
+// the axes of the weapon in a hand, and where the hand holds it (the collider is measured from there). hand 1 = right,
+// hand 0 = the weapon of the left hand in a dual wield. Same rotations as the weapon is drawn with
+qboolean VR_WeaponBasis( int hand, vec3_t grip, vec3_t f, vec3_t l, vec3_t u )
+{
+	if( hand == 1 )
+	{
+		float rp, ry, rr;
+		const float *rlo = VR_ReloadRightOffsets();
+
+		if( !vr.hand[1].valid )
+			return false;
+
+		rp = rlo[3]; ry = rlo[4]; rr = rlo[5];
+
+		if( !VR_TwoHandBasis( f, l, u ))
+		{
+			VectorCopy( vr.hand[1].fwd, f );
+			VectorCopy( vr.hand[1].left, l );
+			VectorCopy( vr.hand[1].up, u );
+		}
+
+		if( vr_vm_rot_local.value )
+		{
+			float rolloff = vr_vm_roll.value + rr;
+
+			VR_RotateAxis( f, u, vr_vm_yaw.value + ry );
+			VR_RotateAxis( l, u, vr_vm_yaw.value + ry );
+			VR_RotateAxis( f, l, vr_vm_pitch.value + rp );
+			VR_RotateAxis( u, l, vr_vm_pitch.value + rp );
+
+			if( vr_vm_flip_roll.value )
+				rolloff = -rolloff;
+
+			VR_RotateAxis( l, f, rolloff );
+			VR_RotateAxis( u, f, rolloff );
+		}
+
+		VectorCopy( vr.hand[1].pos, grip );
+		return true;
+	}
+	else
+	{
+		char model[64], base[48];
+		float wp, wy, wr;
+
+		if( !vr.hand[0].valid || !VR_CofDualModel( model, sizeof( model )))
+			return false;
+
+		VR_ModelBaseName( model, base, sizeof( base ));
+		wp = VR_WeaponNumber( base, "vr_vm_pitch", 0.0f ) + vr_dual_pitch.value;
+		wy = -( VR_WeaponNumber( base, "vr_vm_yaw", 0.0f ) + vr_dual_yaw.value );
+		wr = -( VR_WeaponNumber( base, "vr_vm_roll", 0.0f ) + vr_dual_roll.value );
+
+		VectorCopy( vr.hand[0].fwd, f );
+		VectorCopy( vr.hand[0].left, l );
+		VectorCopy( vr.hand[0].up, u );
+		VR_RotateAxis( f, u, wy );
+		VR_RotateAxis( l, u, wy );
+		VR_RotateAxis( f, l, wp );
+		VR_RotateAxis( u, l, wp );
+		VR_RotateAxis( l, f, wr );
+		VR_RotateAxis( u, f, wr );
+		VectorCopy( vr.hand[0].pos, grip );
+		return true;
+	}
+}
+
+float VR_WorldScale( void )
+{
+	return vr_worldscale.value;
+}
+
+qboolean VR_IsMeleeModel( const char *base )
+{
+	return VR_ListMatches( vr_melee_models.string, base, true );
 }
 
 // the muzzle flash of the left gun: the game draws none for it, so a short soft star is drawn in front of the left hand
@@ -3241,7 +3096,7 @@ static void VR_UpdateWeaponProfile( void )
 
 static void VR_WeaponSave_f( void )
 {
-	char text[1024], file[96];
+	char text[3072], file[96];
 	int i, len = 0;
 
 	if( !vr_tune_model[0] )
@@ -3262,7 +3117,7 @@ static void VR_WeaponSave_f( void )
 
 static void VR_WeaponReset_f( void )
 {
-	char text[1024], file[96];
+	char text[3072], file[96];
 	int i, len = 0;
 
 	if( !vr_tune_model[0] )
@@ -4633,7 +4488,7 @@ static void VR_DrawHands( void )
 	float proj[16], view[16];
 	int saved_tmu, unit, h;
 
-	if( !vr_draw_hands.value || ( !vr_draw_axes.value && !vr_draw_laser.value && !VR_GripDebug( )) || ( !vr.hand[0].valid && !vr.hand[1].valid ))
+	if( !vr_draw_hands.value || ( !vr_draw_axes.value && !vr_draw_laser.value && !VR_GripDebug( ) && !VR_HitboxDebug( )) || ( !vr.hand[0].valid && !vr.hand[1].valid ))
 		return;
 
 	Matrix4x4_ToArrayFloatGL( RI.projectionMatrix, proj );
@@ -4738,6 +4593,7 @@ static void VR_DrawHands( void )
 	pglEnd();
 
 	VR_DrawGripSphere();
+	VR_DrawMeleeDebug();
 
 	pglMatrixMode( GL_MODELVIEW );
 	pglPopMatrix();

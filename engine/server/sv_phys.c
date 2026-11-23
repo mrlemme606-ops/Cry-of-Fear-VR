@@ -232,70 +232,6 @@ in a frame.  Not used for pushmove objects, because they must be exact.
 Returns false if the entity removed itself.
 =============
 */
-#if !XASH_DEDICATED
-extern double vr_melee_window_until;	// in_vr.c: a real VR swing has just begun
-extern convar_t vr_melee_instant;
-extern qboolean vr_melee_override;
-extern qboolean vr_melee_dbg;
-extern qboolean vr_melee_think_seen;
-extern vec3_t vr_melee_eye;
-extern float vr_melee_pitch, vr_melee_yaw;
-extern double vr_melee_override_until;
-
-/*
-=============
-SV_VRMeleeInstant
-
-Cry of Fear's melee weapons do two things that make a VR swing feel wrong:
-- the hit happens in a think of the PLAYER, 0.28 to 0.41 seconds after the attack button
-- after the attack the weapon waits (m_flNextPrimaryAttack, 0.9 s for the nightstick) before it can attack again
-In VR the hit belongs to the swing, so right after a real swing the waiting hit runs in the next frame, and the weapons
-of the player may attack again almost at once.
-=============
-*/
-static void SV_VRMeleeInstant( edict_t *player )
-{
-	static double wait_cut_for;
-	int i;
-
-	if( host.realtime >= vr_melee_window_until || !vr_melee_instant.value )
-		return;
-
-	if( NUM_FOR_EDICT( player ) != 1 )
-		return;
-
-	// the hit
-	if( player->v.nextthink > sv.time + sv.frametime && player->v.nextthink < sv.time + 0.6f )
-		player->v.nextthink = sv.time + 0.001f;
-		vr_melee_think_seen = true;
-
-	// the wait between two attacks of the weapons the player holds: cut ONCE per swing. The attack button stays pressed for a
-	// moment after a swing, so cutting the wait on every frame made the weapon attack twice (two hits for one swing)
-	if( wait_cut_for == vr_melee_window_until )
-		return;
-
-	wait_cut_for = vr_melee_window_until;
-
-	for( i = 2; i < svgame.numEntities; i++ )
-	{
-		edict_t *e = &svgame.edicts[i];
-		float *next;
-
-		if( !SV_IsValidEdict( e ) || e->v.owner != player || !e->pvPrivateData )
-			continue;
-
-		if( Q_strnicmp( SV_GetString( e->v.classname ), "weapon_", 7 ))
-			continue;
-
-		// CBasePlayerWeapon::m_flNextPrimaryAttack (float number 115 of the object in the 32-bit game library)
-		next = (float *)((byte *)e->pvPrivateData + 460 );
-
-		if( *next > sv.time && *next < sv.time + 3.0f )
-			*next = sv.time;
-	}
-}
-#endif
-
 static qboolean SV_RunThink( edict_t *ent )
 {
 	if( !FBitSet( ent->v.flags, FL_KILLME ))
@@ -324,51 +260,6 @@ static qboolean SV_PlayerRunThinkInternal( edict_t *ent, float frametime, double
 
 qboolean SV_PlayerRunThink( edict_t *ent, float frametime, double time )
 {
-#if !XASH_DEDICATED
-	SV_VRMeleeInstant( ent );
-
-	// The hit of a melee swing is made in a think of the player, which looks from the player's eye along the view angles.
-	// While that think runs the eye is the point where the weapon touched something and the view is the swing direction
-	// (the game library of Lambda1VR does the same with the position of the controller)
-	if( vr_melee_override && NUM_FOR_EDICT( ent ) == 1 )
-	{
-		if( host.realtime > vr_melee_override_until )
-			vr_melee_override = false;
-		else if( ent->v.nextthink > 0.0 && ent->v.nextthink <= time + frametime )
-		{
-			vec3_t save_ofs, save_ang;
-			qboolean ret;
-
-			VectorCopy( ent->v.view_ofs, save_ofs );
-			VectorCopy( ent->v.v_angle, save_ang );
-
-			VectorSubtract( vr_melee_eye, ent->v.origin, ent->v.view_ofs );
-			ent->v.v_angle[PITCH] = vr_melee_pitch;
-			ent->v.v_angle[YAW] = vr_melee_yaw;
-			ent->v.v_angle[ROLL] = 0.0f;
-
-			if( vr_melee_dbg )
-			{
-				// what the game's own line trace (32 units from the eye along the view) will meet
-				vec3_t fwd, end;
-				trace_t mt;
-
-				AngleVectors( ent->v.v_angle, fwd, NULL, NULL );
-				VectorMA( vr_melee_eye, 32.0f, fwd, end );
-				mt = SV_Move( vr_melee_eye, vec3_origin, vec3_origin, end, MOVE_NORMAL, ent, false );
-
-				Con_Printf( "VR melee: the game's hit trace %s: '%s' (distance %.0f, health %.0f)\n", mt.fraction < 1.0f ? "meets" : "meets nothing",
-					mt.fraction < 1.0f && mt.ent ? SV_ClassName( mt.ent ) : "-", mt.fraction * 32.0f, mt.fraction < 1.0f && mt.ent ? mt.ent->v.health : 0.0f );
-			}
-
-			ret = SV_PlayerRunThinkInternal( ent, frametime, time );
-
-			VectorCopy( save_ofs, ent->v.view_ofs );
-			VectorCopy( save_ang, ent->v.v_angle );
-			return ret;
-		}
-	}
-#endif
 
 	return SV_PlayerRunThinkInternal( ent, frametime, time );
 }
