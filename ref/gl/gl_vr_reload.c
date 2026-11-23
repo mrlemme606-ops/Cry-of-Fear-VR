@@ -766,7 +766,7 @@ void VR_ReloadTick( void )
 	float head_yaw;
 	int buttons, pressed, released, mask = 0;
 	qboolean noswing = false;
-	qboolean in_menu, gun_ok, empty_now, near_gun = false;
+	qboolean in_menu, gun_ok, left_busy, empty_now, near_gun = false;
 
 	if( !cv_buttons )
 	{
@@ -789,11 +789,20 @@ void VR_ReloadTick( void )
 
 	// the weapon has to have been drawn very recently, otherwise it is not in your hand (dead, holstered, menu)
 	gun_ok = ( gp_cl->time - rl.gun_time ) < 0.5;
-	rl.active = rl.def && gun_ok && !in_menu;
+
+	// a dual wield has a weapon in the left hand: that hand cannot grip the gun in the right one, or reload it by hand.
+	// Only the empty (universal) left hand can
+	{
+		char dual_model[64];
+
+		left_busy = VR_CofDualModel( dual_model, sizeof( dual_model ));
+	}
+
+	rl.active = rl.def && gun_ok && !in_menu && !left_busy;
 
 	if( !rl.active )
 	{
-		if( rl.def && !gun_ok && rl.state != RL_READY )
+		if( rl.def && ( !gun_ok || left_busy ) && rl.state != RL_READY )
 			RL_SetState( RL_READY );
 
 		rl.twohand = false;
