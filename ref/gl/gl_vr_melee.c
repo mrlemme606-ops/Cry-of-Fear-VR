@@ -54,6 +54,21 @@ CVAR_DEFINE_AUTO( vr_hbl_pitch, "0", FCVAR_ARCHIVE, "left weapon collider: extra
 CVAR_DEFINE_AUTO( vr_hbl_yaw, "0", FCVAR_ARCHIVE, "left weapon collider: extra yaw degrees" );
 CVAR_DEFINE_AUTO( vr_hbl_roll, "0", FCVAR_ARCHIVE, "left weapon collider: extra roll degrees" );
 
+// whether this weapon hurts what it hits: -1 = by its kind (melee weapons, fists and guns do, phones, flares and the like do not), 0 = never (it only collides),
+// 1 = always. Saved per weapon
+CVAR_DEFINE_AUTO( vr_hb_melee, "-1", FCVAR_ARCHIVE, "this weapon: -1 = by its kind, 0 = only collides (never hurts), 1 = hurts what it hits. Saved per weapon" );
+
+// the left fist (a free left hand that can punch): one box for it, not per weapon (saved in your config)
+static CVAR_DEFINE_AUTO( vr_hb_lf_x, "0", FCVAR_ARCHIVE, "left fist collider: centre, units forward of the hand (the fist's own axes)" );
+static CVAR_DEFINE_AUTO( vr_hb_lf_y, "0", FCVAR_ARCHIVE, "left fist collider: centre, units to the left" );
+static CVAR_DEFINE_AUTO( vr_hb_lf_z, "0", FCVAR_ARCHIVE, "left fist collider: centre, units up" );
+static CVAR_DEFINE_AUTO( vr_hb_lf_sx, "0", FCVAR_ARCHIVE, "left fist collider: size along the fist (units). 0 = the default (vr_hb_fist_size)" );
+static CVAR_DEFINE_AUTO( vr_hb_lf_sy, "0", FCVAR_ARCHIVE, "left fist collider: size sideways" );
+static CVAR_DEFINE_AUTO( vr_hb_lf_sz, "0", FCVAR_ARCHIVE, "left fist collider: size up/down" );
+static CVAR_DEFINE_AUTO( vr_hb_lf_pitch, "0", FCVAR_ARCHIVE, "left fist collider: extra pitch degrees" );
+static CVAR_DEFINE_AUTO( vr_hb_lf_yaw, "0", FCVAR_ARCHIVE, "left fist collider: extra yaw degrees" );
+static CVAR_DEFINE_AUTO( vr_hb_lf_roll, "0", FCVAR_ARCHIVE, "left fist collider: extra roll degrees" );
+
 // -------- cvars: how the system behaves --------
 static CVAR_DEFINE_AUTO( vr_hb_enable, "1", FCVAR_ARCHIVE, "1 = weapon colliders hit and block. 0 = melee off" );
 static CVAR_DEFINE_AUTO( vr_hb_debug, "0", 0, "1 = draw the weapon colliders (cyan = free, yellow = blocked by the world, red = just hit). 2 = also the sample points and the pushed-back box" );
@@ -71,6 +86,8 @@ static CVAR_DEFINE_AUTO( vr_hb_haptic, "1", FCVAR_ARCHIVE, "1 = the hand vibrate
 static CVAR_DEFINE_AUTO( vr_hb_wallspeed, "1.3", FCVAR_ARCHIVE, "m/s at which hitting the world makes a sound (0 = never)" );
 static CVAR_DEFINE_AUTO( vr_hb_swingspeed, "2.6", FCVAR_ARCHIVE, "m/s at which the tip of a melee weapon makes its swing sound" );
 static CVAR_DEFINE_AUTO( vr_hb_nodmg_models, "mobile+flare+lantern+camera+syringe+pills+cassette+flashlight+lighter+bandage", FCVAR_ARCHIVE, "items that block but never hurt (parts of the model name, separated by +). Every other gun can pistol whip" );
+static CVAR_DEFINE_AUTO( vr_hb_handpush, "0.6", FCVAR_ARCHIVE, "how much the colliders of the two hands push each other apart (0 = they do not touch each other, 1 = each moves half the overlap)" );
+static CVAR_DEFINE_AUTO( vr_hb_handmax, "5", FCVAR_ARCHIVE, "the most a hand is pushed by the other hand, units" );
 static CVAR_DEFINE_AUTO( vr_hb_fist_size, "5", FCVAR_ARCHIVE, "size of the box of a fist (units)" );
 static CVAR_DEFINE_AUTO( vr_hb_fist_fwd, "4", FCVAR_ARCHIVE, "how far in front of the hand the box of a fist sits (units)" );
 
@@ -99,6 +116,7 @@ typedef struct
 	vec3_t		push;		// where the box has to go to leave the walls (this frame)
 	vec3_t		push_vis;	// the same, smoothed
 	vec3_t		bounce, bounce_vel;
+	vec3_t		hpush;		// pushed by the other hand (smoothed)
 	double		flash_until;
 	double		block_until;
 	double		swing_next;
@@ -252,6 +270,131 @@ static void HB_DefaultBox( int cls, qboolean left, float *center, float *size )
 	}
 }
 
+// ---- the box of a weapon in the left hand of a dual wield: the box of the same weapon in the right hand, mirrored ----
+// The last boxes this session of the weapons that were in the right hand (fitted or tuned), and the saved ones (vr_weapon_save)
+#define HB_CACHE	16
+
+static struct { char base[48]; float v[9]; } hb_cache[HB_CACHE];
+static int hb_cache_n;
+
+static void HB_CacheStore( const char *base )
+{
+	float v[9];
+	int i;
+
+	if( !base[0] || vr_hb_sx.value <= 0.01f || vr_hb_sy.value <= 0.01f || vr_hb_sz.value <= 0.01f )
+		return;
+
+	v[0] = vr_hb_x.value; v[1] = vr_hb_y.value; v[2] = vr_hb_z.value;
+	v[3] = vr_hb_sx.value; v[4] = vr_hb_sy.value; v[5] = vr_hb_sz.value;
+	v[6] = vr_hb_pitch.value; v[7] = vr_hb_yaw.value; v[8] = vr_hb_roll.value;
+
+	for( i = 0; i < hb_cache_n; i++ )
+	{
+		if( !Q_stricmp( hb_cache[i].base, base ))
+			break;
+	}
+
+	if( i == hb_cache_n )
+	{
+		if( hb_cache_n >= HB_CACHE )
+			i = HB_CACHE - 1;
+		else
+			hb_cache_n++;
+
+		Q_strncpy( hb_cache[i].base, base, sizeof( hb_cache[i].base ));
+	}
+
+	memcpy( hb_cache[i].v, v, sizeof( v ));
+}
+
+static qboolean HB_FileNumber( const char *text, const char *key, float *out )
+{
+	const char *p = text;
+	size_t n = Q_strlen( key );
+
+	while( p && *p )
+	{
+		if( !Q_strncmp( p, key, n ) && ( p[n] == ' ' || p[n] == '\t' ))
+		{
+			p += n;
+
+			while( *p == ' ' || *p == '\t' || *p == '"' ) p++;
+
+			*out = Q_atof( p );
+			return true;
+		}
+
+		while( *p && *p != '\n' ) p++;
+		while( *p == '\n' || *p == '\r' ) p++;
+	}
+
+	return false;
+}
+
+// false = no box known for that weapon (or it is one of those with its own position in the left hand)
+static qboolean HB_MirrorBox( const char *base, float *out )
+{
+	static char file_base[48];
+	static float file_v[9];
+	static qboolean file_ok;
+	static double file_time = -100.0;
+	double now = gp_host ? gp_host->realtime : 0.0;
+	int i;
+
+	// the switchblade and the branch are held differently in the left hand: their boxes are set by hand (vr_hbl_*)
+	if( HB_NameHas( base, "switchblade" ) || HB_NameHas( base, "knife" ) || HB_NameHas( base, "branch" ))
+		return false;
+
+	for( i = 0; i < hb_cache_n; i++ )
+	{
+		if( !Q_stricmp( hb_cache[i].base, base ))
+		{
+			memcpy( out, hb_cache[i].v, sizeof( float ) * 9 );
+			return true;
+		}
+	}
+
+	// the saved file of the weapon (read again every few seconds at most)
+	if( Q_stricmp( file_base, base ) || now - file_time > 4.0 || now < file_time )
+	{
+		char name[96];
+		fs_offset_t len = 0;
+		char *text;
+		static const char *keys[9] = { "vr_hb_x", "vr_hb_y", "vr_hb_z", "vr_hb_sx", "vr_hb_sy", "vr_hb_sz", "vr_hb_pitch", "vr_hb_yaw", "vr_hb_roll" };
+
+		Q_strncpy( file_base, base, sizeof( file_base ));
+		file_time = now;
+		file_ok = false;
+		Q_snprintf( name, sizeof( name ), "vr_weapon_%s.cfg", base );
+		text = (char *)gEngfuncs.fsapi->LoadFileMalloc( name, &len, false );
+
+		if( text )
+		{
+			qboolean all = true;
+
+			for( i = 0; i < 9; i++ )
+			{
+				file_v[i] = 0.0f;
+
+				if( !HB_FileNumber( text, keys[i], &file_v[i] ) && i >= 3 && i <= 5 )
+					all = false;
+			}
+
+			file_ok = all && file_v[3] > 0.01f && file_v[4] > 0.01f && file_v[5] > 0.01f;
+			free( text );
+		}
+	}
+
+	if( file_ok )
+	{
+		memcpy( out, file_v, sizeof( file_v ));
+		return true;
+	}
+
+	return false;
+}
+
 // the box of one hand in the world, from the hand and the weapon's axes. false = nothing to collide with this frame
 static qboolean HB_BuildBox( int hand, hb_box_t *box )
 {
@@ -259,6 +402,8 @@ static qboolean HB_BuildBox( int hand, hb_box_t *box )
 	vec3_t grip, f, l, u;
 	float center[3], size[3], rot[3];
 	const convar_t *cv[9];
+	float mir[9];
+	qboolean use_mirror = false;
 	int cls, i;
 
 	box->valid = false;
@@ -283,7 +428,8 @@ static qboolean HB_BuildBox( int hand, hb_box_t *box )
 	{
 		char model[64];
 
-		if( VR_LeftGripping( ) || VR_TwoHandActive( ))
+		// the left hand grips the gun, or works its magazine or bolt: the collider of the weapon in the right hand is the only one
+		if( VR_LeftGripping( ) || VR_TwoHandActive( ) || VR_ReloadLeftBusy( ))
 			return false;
 
 		if( VR_CofDualModel( model, sizeof( model )))
@@ -296,22 +442,42 @@ static qboolean HB_BuildBox( int hand, hb_box_t *box )
 
 			cv[0] = &vr_hbl_x; cv[1] = &vr_hbl_y; cv[2] = &vr_hbl_z; cv[3] = &vr_hbl_sx; cv[4] = &vr_hbl_sy; cv[5] = &vr_hbl_sz;
 			cv[6] = &vr_hbl_pitch; cv[7] = &vr_hbl_yaw; cv[8] = &vr_hbl_roll;
+
+			// no box of its own set for the left hand: the box of the same weapon in the right hand, mirrored
+			if( vr_hbl_sx.value <= 0.01f || vr_hbl_sy.value <= 0.01f || vr_hbl_sz.value <= 0.01f )
+				use_mirror = HB_MirrorBox( base, mir );
 		}
 		else if( HB_Cvar( "vr_in_fists" ) > 0.5f || HB_Cvar( "vr_in_oneh" ) > 0.5f )
 		{
-			// the free left hand is a fist (when the right hand holds nothing or a one handed item)
-			if( !VR_GetHandBasis( 0, grip, f, l, u ))
+			// the free left hand is a fist (when the right hand holds nothing or a one handed item). The box sits on the fist
+			// that is drawn (the mirrored fist model), or on the hand when the universal left hand is shown instead
+			if( VR_LeftFistWanted( ))
+			{
+				if( !VR_LeftFistBasis( grip, f, l, u ))
+					return false;
+			}
+			else if( !VR_GetHandBasis( 0, grip, f, l, u ))
 				return false;
 
-			base[0] = 0;
+			Q_strncpy( base, "left_fist", sizeof( base ));
 			cls = HB_FIST;
-			cv[0] = NULL;
+			cv[0] = &vr_hb_lf_x; cv[1] = &vr_hb_lf_y; cv[2] = &vr_hb_lf_z; cv[3] = &vr_hb_lf_sx; cv[4] = &vr_hb_lf_sy; cv[5] = &vr_hb_lf_sz;
+			cv[6] = &vr_hb_lf_pitch; cv[7] = &vr_hb_lf_yaw; cv[8] = &vr_hb_lf_roll;
 		}
 		else return false;
 	}
 
 	if( cls == HB_NONE )
 		return false;
+
+	// a weapon can be told to hurt or not to hurt (vr_hb_melee, saved per weapon). It collides either way
+	if( hand == 1 )
+	{
+		if( vr_hb_melee.value >= 0.0f && vr_hb_melee.value < 0.5f )
+			cls = HB_BLOCKONLY;
+		else if( vr_hb_melee.value >= 0.5f && cls == HB_BLOCKONLY )
+			cls = HB_WHIP;
+	}
 
 	if( cv[0] && cv[3]->value > 0.01f && cv[4]->value > 0.01f && cv[5]->value > 0.01f )
 	{
@@ -321,6 +487,13 @@ static qboolean HB_BuildBox( int hand, hb_box_t *box )
 			size[i] = cv[3 + i]->value;
 			rot[i] = cv[6 + i]->value;
 		}
+	}
+	else if( use_mirror )
+	{
+		// reflected across the middle of the body: sideways flips, so do yaw and roll
+		VectorSet( center, mir[0], -mir[1], mir[2] );
+		VectorSet( size, mir[3], mir[4], mir[5] );
+		VectorSet( rot, mir[6], -mir[7], -mir[8] );
 	}
 	else
 	{
@@ -756,6 +929,139 @@ static void HB_UpdateHand( int hand, double now, double dt, const vec3_t head_de
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// the two hands (and what they hold) touch each other: overlapping boxes push each other apart a little, and the hands buzz
+// ---------------------------------------------------------------------------------------------------------------------
+// separating axis test of two oriented boxes. true = overlapping; dir = the way to move a to get away from b, depth = how far
+static qboolean HB_BoxOverlap( const hb_box_t *a, const hb_box_t *b, vec3_t dir, float *depth )
+{
+	vec3_t axes[15], d;
+	float best = 1.0e9f;
+	int i, j, n = 0, best_i = -1;
+
+	for( i = 0; i < 3; i++ )
+	{
+		VectorCopy( a->ax[i], axes[n] ); n++;
+		VectorCopy( b->ax[i], axes[n] ); n++;
+	}
+
+	for( i = 0; i < 3; i++ )
+	{
+		for( j = 0; j < 3; j++ )
+		{
+			vec3_t c;
+			float len;
+
+			CrossProduct( a->ax[i], b->ax[j], c );
+			len = VectorLength( c );
+
+			if( len < 0.001f )
+				continue;
+
+			VectorScale( c, 1.0f / len, axes[n] );
+			n++;
+		}
+	}
+
+	VectorSubtract( b->c, a->c, d );
+
+	for( i = 0; i < n; i++ )
+	{
+		float ra = 0.0f, rb = 0.0f, dist, overlap;
+		int k;
+
+		for( k = 0; k < 3; k++ )
+		{
+			ra += a->h[k] * fabs( DotProduct( a->ax[k], axes[i] ));
+			rb += b->h[k] * fabs( DotProduct( b->ax[k], axes[i] ));
+		}
+
+		dist = DotProduct( d, axes[i] );
+		overlap = ra + rb - fabs( dist );
+
+		if( overlap <= 0.0f )
+			return false;
+
+		if( overlap < best )
+		{
+			best = overlap;
+			best_i = i;
+			VectorScale( axes[i], dist > 0.0f ? -1.0f : 1.0f, dir );
+		}
+	}
+
+	if( best_i < 0 )
+		return false;
+
+	*depth = best;
+	return true;
+}
+
+static void HB_HandsTouch( double now, double dt )
+{
+	static vec3_t last_c[2];
+	static qboolean last_ok, was_touching;
+	static double haptic_next;
+	float strength = bound( 0.0f, vr_hb_handpush.value, 1.0f ), maxpush = bound( 0.5f, vr_hb_handmax.value, 20.0f );
+	float fall = 1.0f - exp( -(float)bound( 0.0, dt, 0.05 ) / 0.08f );
+	vec3_t want[2], dir, rel;
+	float depth = 0.0f;
+	qboolean touching = false;
+	int h;
+
+	VectorClear( want[0] );
+	VectorClear( want[1] );
+
+	if( strength > 0.0f && vr_hb_enable.value && hb[0].cur.valid && hb[1].cur.valid && HB_BoxOverlap( &hb[0].cur, &hb[1].cur, dir, &depth ))
+	{
+		float push = Q_min( depth * 0.5f * strength, maxpush );
+
+		touching = true;
+		VectorScale( dir, push, want[0] );		// the left one moves away from the right one
+		VectorScale( dir, -push, want[1] );		// and the right one the other way
+	}
+
+	// how fast they came together
+	if( last_ok && dt > 0.0005 && hb[0].cur.valid && hb[1].cur.valid )
+	{
+		vec3_t v0, v1;
+
+		VectorSubtract( hb[0].cur.c, last_c[0], v0 );
+		VectorSubtract( hb[1].cur.c, last_c[1], v1 );
+		VectorSubtract( v0, v1, rel );
+		VectorScale( rel, (float)( 1.0 / dt ) / VR_WorldScale(), rel );
+
+		if( touching && !was_touching && now >= haptic_next && VectorLength( rel ) > 0.5f )
+		{
+			float sp = VectorLength( rel );
+
+			HB_Haptic( 0, sp, 0.35f );
+			HB_Haptic( 1, sp, 0.35f );
+			haptic_next = now + 0.2;
+		}
+	}
+
+	was_touching = touching;
+	last_ok = hb[0].cur.valid && hb[1].cur.valid;
+
+	if( hb[0].cur.valid ) VectorCopy( hb[0].cur.c, last_c[0] );
+	if( hb[1].cur.valid ) VectorCopy( hb[1].cur.c, last_c[1] );
+
+	// in at once, out softly
+	for( h = 0; h < 2; h++ )
+	{
+		vec3_t diff;
+
+		if( VectorLength( want[h] ) >= VectorLength( hb[h].hpush ))
+			VectorCopy( want[h], hb[h].hpush );
+		else
+		{
+			VectorSubtract( want[h], hb[h].hpush, diff );
+			VectorMA( hb[h].hpush, fall, diff, hb[h].hpush );
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // the frame, called once per engine frame after the hands have moved
 // ---------------------------------------------------------------------------------------------------------------------
 void VR_MeleeFrame( void )
@@ -796,11 +1102,32 @@ void VR_MeleeFrame( void )
 		hb[0].prev_ok = hb[1].prev_ok = false;
 		VectorClear( hb[0].push ); VectorClear( hb[1].push );
 		VectorClear( hb[0].push_vis ); VectorClear( hb[1].push_vis );
+		VectorClear( hb[0].hpush ); VectorClear( hb[1].hpush );
 		return;
 	}
 
 	HB_UpdateHand( 1, now, dt, head_delta );
 	HB_UpdateHand( 0, now, dt, head_delta );
+
+	// remember the box of the weapon in the right hand: the same weapon in the left hand of a dual wield starts from it, mirrored
+	if( hb[1].cur.valid )
+		HB_CacheStore( hb[1].model );
+
+	HB_HandsTouch( now, dt );
+
+	// the left fist box starts from the default too, written into its cvars once so it can be tuned
+	if( hb[0].cur.valid && hb[0].cur.cls == HB_FIST && !Q_strcmp( hb[0].model, "left_fist" ) && vr_hb_lf_sx.value <= 0.01f )
+	{
+		float c[3], z[3];
+
+		HB_DefaultBox( HB_FIST, true, c, z );
+		gEngfuncs.Cvar_SetValue( "vr_hb_lf_x", c[0] );
+		gEngfuncs.Cvar_SetValue( "vr_hb_lf_y", c[1] );
+		gEngfuncs.Cvar_SetValue( "vr_hb_lf_z", c[2] );
+		gEngfuncs.Cvar_SetValue( "vr_hb_lf_sx", z[0] );
+		gEngfuncs.Cvar_SetValue( "vr_hb_lf_sy", z[1] );
+		gEngfuncs.Cvar_SetValue( "vr_hb_lf_sz", z[2] );
+	}
 
 	// the first time a weapon is held without a box of its own: fit the box to its mesh
 	if( hb[1].cur.valid )
@@ -810,6 +1137,21 @@ void VR_MeleeFrame( void )
 			Q_strncpy( hb_fit_model, hb[1].model, sizeof( hb_fit_model ));
 			hb_fit_done = false;
 			hb_fit_attempts = 0;
+		}
+
+		// no mesh to fit (the fist): its default box is written into the cvars, so it can be seen and tuned like any other
+		if( !hb_fit_done && vr_hb_sx.value <= 0.01f && hb[1].cur.cls == HB_FIST )
+		{
+			float c[3], z[3];
+
+			HB_DefaultBox( HB_FIST, false, c, z );
+			gEngfuncs.Cvar_SetValue( "vr_hb_x", c[0] );
+			gEngfuncs.Cvar_SetValue( "vr_hb_y", c[1] );
+			gEngfuncs.Cvar_SetValue( "vr_hb_z", c[2] );
+			gEngfuncs.Cvar_SetValue( "vr_hb_sx", z[0] );
+			gEngfuncs.Cvar_SetValue( "vr_hb_sy", z[1] );
+			gEngfuncs.Cvar_SetValue( "vr_hb_sz", z[2] );
+			hb_fit_done = true;
 		}
 
 		if( !hb_fit_done && vr_hb_sx.value <= 0.01f && hb_fit_attempts < 30 && hb[1].cur.cls != HB_FIST )
@@ -834,6 +1176,7 @@ void VR_MeleePushback( int hand, vec3_t out )
 	}
 
 	VectorAdd( h->push_vis, h->bounce, out );
+	VectorAdd( out, h->hpush, out );
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1027,6 +1370,7 @@ void VR_DrawMeleeDebug( void )
 
 			// where the weapon is drawn (pushed back / bounced)
 			VectorAdd( p->push_vis, p->bounce, off );
+			VectorAdd( off, p->hpush, off );
 			HB_DrawBox( &p->cur, off, 1.0f, 0.2f, 1.0f );
 
 			// the sample points
@@ -1065,6 +1409,16 @@ void VR_MeleeInitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_yaw );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_roll );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_dmg );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_melee );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lf_x );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lf_y );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lf_z );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lf_sx );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lf_sy );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lf_sz );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lf_pitch );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lf_yaw );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lf_roll );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hbl_x );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hbl_y );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hbl_z );
@@ -1091,6 +1445,8 @@ void VR_MeleeInitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_wallspeed );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_swingspeed );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_nodmg_models );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_handpush );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_handmax );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_fist_size );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_fist_fwd );
 

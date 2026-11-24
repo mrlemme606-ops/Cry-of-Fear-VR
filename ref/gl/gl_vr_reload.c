@@ -599,6 +599,12 @@ qboolean VR_LeftGripping( void )
 	return rl.active && rl.twohand;
 }
 
+// the left hand is busy with the gun in the right hand: it grips it, holds a magazine, or works the bolt. It has no collider then
+qboolean VR_ReloadLeftBusy( void )
+{
+	return rl.active && ( rl.twohand || rl.state == RL_HOLDMAG || rl.state == RL_BOLT );
+}
+
 // the left hand steers the gun: the weapon points from the right hand to the left hand
 // the weapon in the right hand is one that is held with two hands (shotgun, rifle): no other weapon can be in the left hand
 qboolean VR_ReloadWeaponTwoHanded( void )

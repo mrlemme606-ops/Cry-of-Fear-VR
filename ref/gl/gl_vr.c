@@ -227,6 +227,15 @@ static CVAR_DEFINE_AUTO( vr_static_models, "mobile+flashlight+flare+lantern+syri
 static CVAR_DEFINE_AUTO( vr_melee_models, "fist+actions+axe+branch+nightstick+sledge+pickaxe+shovel+switchblade", 0, "weapon model names (part of the file name) that are swung by hand. Separate with +" );
 static CVAR_DEFINE_AUTO( vr_omni_models, "flare+lantern", 0, "weapon model names that light up everything around your hand (flare, lantern). Separate with +" );
 static CVAR_DEFINE_AUTO( vr_lhand, "1", FCVAR_ARCHIVE, "1 = a left hand is drawn at your left controller" );
+static CVAR_DEFINE_AUTO( vr_lfist, "1", FCVAR_ARCHIVE, "1 = a free left hand that can throw a punch (the right hand holds nothing, a phone, a flare, a lantern) is the mirrored fist model. 0 = always the universal left hand" );
+static CVAR_DEFINE_AUTO( vr_lfist_x, "0", FCVAR_ARCHIVE, "left fist: move it forward (units), on top of the mirrored hold of the right fist" );
+static CVAR_DEFINE_AUTO( vr_lfist_y, "0", FCVAR_ARCHIVE, "left fist: move it to the left (units)" );
+static CVAR_DEFINE_AUTO( vr_lfist_z, "0", FCVAR_ARCHIVE, "left fist: move it up (units)" );
+static CVAR_DEFINE_AUTO( vr_lfist_pitch, "0", FCVAR_ARCHIVE, "left fist: extra pitch (degrees)" );
+static CVAR_DEFINE_AUTO( vr_lfist_yaw, "0", FCVAR_ARCHIVE, "left fist: extra yaw (degrees)" );
+static CVAR_DEFINE_AUTO( vr_lfist_roll, "0", FCVAR_ARCHIVE, "left fist: extra roll (degrees)" );
+static CVAR_DEFINE_AUTO( vr_lfist_scale, "1", FCVAR_ARCHIVE, "left fist: size, as a multiple of the size of the right fist" );
+static CVAR_DEFINE_AUTO( vr_lfist_cut, "0", FCVAR_ARCHIVE, "left fist: move the arm cut (units, on top of the right fist's cut)" );
 static CVAR_DEFINE_AUTO( vr_lhand_model, "models/weapons/switchblade/v_switchblade.mdl", 0, "weapon model whose left arm is used as the left hand" );
 static CVAR_DEFINE_AUTO( vr_lhand_hide_bones, "^r_+grippity+blade", 0, "parts of the left hand model that are not drawn (the right arm and the weapon). Separate with +" );
 static CVAR_DEFINE_AUTO( vr_lh_grip_x, "12", FCVAR_ARCHIVE, "left hand position on the controller: forward" );
@@ -513,6 +522,15 @@ void VR_InitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_phone_light );
 	gEngfuncs.Cvar_RegisterVariable( &vr_omni_models );
 	gEngfuncs.Cvar_RegisterVariable( &vr_lhand );
+	gEngfuncs.Cvar_RegisterVariable( &vr_lfist );
+	gEngfuncs.Cvar_RegisterVariable( &vr_lfist_x );
+	gEngfuncs.Cvar_RegisterVariable( &vr_lfist_y );
+	gEngfuncs.Cvar_RegisterVariable( &vr_lfist_z );
+	gEngfuncs.Cvar_RegisterVariable( &vr_lfist_pitch );
+	gEngfuncs.Cvar_RegisterVariable( &vr_lfist_yaw );
+	gEngfuncs.Cvar_RegisterVariable( &vr_lfist_roll );
+	gEngfuncs.Cvar_RegisterVariable( &vr_lfist_scale );
+	gEngfuncs.Cvar_RegisterVariable( &vr_lfist_cut );
 	gEngfuncs.Cvar_RegisterVariable( &vr_lhand_model );
 	gEngfuncs.Cvar_RegisterVariable( &vr_lhand_hide_bones );
 	gEngfuncs.Cvar_RegisterVariable( &vr_lh_grip_x );
@@ -895,6 +913,7 @@ static vec3_t vr_aim_target;
 static qboolean vr_aim_hit;	// the hand ray hit something, vr_aim_target is that point
 static qboolean vr_vm_camera;	// the digital camera: its "shoot" animation (the click) always plays
 static qboolean vr_vm_omni, vr_vm_flare;	// flare or lantern in hand
+static qboolean vr_vm_fists, vr_vm_oneh;	// nothing in the right hand (fists), or a one handed item: the left hand can punch
 static qboolean vr_vm_nofreeze;	// never held in the idle pose, whatever the lists say (camera, branch)
 static qboolean vr_vm_static;	// the weapon in hand never animates (phone, syringe)
 static qboolean vr_vm_light;	// the weapon in hand is a flashlight (the phone)
@@ -1575,6 +1594,13 @@ static qboolean VR_ListMatches( const char *list, const char *name, qboolean spl
 }
 
 static qboolean vr_left_pass;	// the universal left hand is being drawn
+static qboolean vr_lfist_pass;	// the mirrored fist on the left hand is being drawn (vr_left_pass is on too)
+static float VR_FistNumber( const char *key, float def );
+
+void VR_SetLeftFistPass( qboolean on )
+{
+	vr_lfist_pass = on;
+}
 static double vr_dual_flash_until;
 static qboolean vr_dual_pass;	// the weapon of the left hand (dual wield) is being drawn
 static char vr_dual_model[64];
@@ -1720,6 +1746,14 @@ void VR_ViewModelClip( qboolean on )
 	cp = DEG2RAD( vr_dual_pass ? vr_dual_cut_pitch.value : ( vr_left_pass ? vr_lh_cut_pitch.value : vr_vm_cut_pitch.value ));
 	cy = DEG2RAD( vr_dual_pass ? vr_dual_cut_yaw.value : ( vr_left_pass ? vr_lh_cut_yaw.value : vr_vm_cut_yaw.value ));
 
+	// the mirrored fist: the cut of the right fist, reflected (the yaw turns the other way)
+	if( vr_lfist_pass )
+	{
+		cut = VR_FistNumber( "vr_vm_arm_cut", 6.0f ) + vr_lfist_cut.value;
+		cp = DEG2RAD( VR_FistNumber( "vr_vm_cut_pitch", 0.0f ));
+		cy = DEG2RAD( -VR_FistNumber( "vr_vm_cut_yaw", 0.0f ));
+	}
+
 	// the cut plane faces along the hand, tilted by yaw (toward the left) and pitch (toward up)
 	{
 		vec3_t hf, hl, hu;
@@ -1742,7 +1776,7 @@ void VR_ViewModelClip( qboolean on )
 
 	// the right hand's weapon: the plane sits on the animated wrist and runs along the arm, so the cut stays at the
 	// same place of the arm whatever the animation does (the controller does not move with the slide of a shotgun)
-	if( !vr_dual_pass && vr_follow_valid[vr_left_pass ? 1 : 0] && vr_cut_follow.value != 0.0f )
+	if( !vr_dual_pass && !vr_lfist_pass && vr_follow_valid[vr_left_pass ? 1 : 0] && vr_cut_follow.value != 0.0f )
 	{
 		int sd = vr_left_pass ? 1 : 0;
 
@@ -1790,6 +1824,10 @@ qboolean VR_ViewModelBoneHidden( const char *bonename )
 
 		return VR_ListMatches( vr_vm_hide_bones.string, bonename, false );
 	}
+
+	// the mirrored fist: the same parts are hidden as on the right fist (its other arm)
+	if( vr_lfist_pass )
+		return VR_ListMatches( vr_vm_hide_bones.string, bonename, false );
 
 	qboolean hidden = VR_ListMatches( vr_left_pass ? vr_lhand_hide_bones.string : vr_vm_hide_bones.string, bonename, false );
 
@@ -2046,7 +2084,7 @@ static convar_t *vr_tune_vars[] =
 	&vr_lh_arm_cut, &vr_lh_cut_pitch, &vr_lh_cut_yaw,
 	&vr_grip_cut, &vr_grip_cut_pitch, &vr_grip_cut_yaw,
 	// the weapon collider (gl_vr_melee.c): saved per weapon, pistol whip boxes of guns included
-	&vr_hb_x, &vr_hb_y, &vr_hb_z, &vr_hb_sx, &vr_hb_sy, &vr_hb_sz, &vr_hb_pitch, &vr_hb_yaw, &vr_hb_roll, &vr_hb_dmg
+	&vr_hb_x, &vr_hb_y, &vr_hb_z, &vr_hb_sx, &vr_hb_sy, &vr_hb_sz, &vr_hb_pitch, &vr_hb_yaw, &vr_hb_roll, &vr_hb_dmg, &vr_hb_melee
 };
 
 #define VR_TUNE_COUNT ( (int)( sizeof( vr_tune_vars ) / sizeof( vr_tune_vars[0] )))
@@ -2309,6 +2347,120 @@ static void VR_WeaponSaveLeft_f( void )
 	if( gEngfuncs.fsapi->WriteFile( file, text, len ))
 		gEngfuncs.Con_Printf( "VR: saved the left hand settings of %s to %s\n", vr_dual_model, file );
 	else gEngfuncs.Con_Printf( S_ERROR "VR: can't write %s\n", file );
+}
+
+// ---- the left fist: a free left hand that can throw a punch is the right fist (v_actions) mirrored ----
+// A number of the settings of the right fist: its saved file if there is one, else its built-in profile. The file is read
+// again every two seconds at most, so a vr_weapon_save of the fist shows up without a restart
+static float VR_FistNumber( const char *key, float def )
+{
+	static char *text;
+	static double read_at = -100.0;
+	double now = gp_host ? gp_host->realtime : 0.0;
+	char base[48];
+	float v;
+
+	VR_ModelBaseName( vr_empty_hand.string, base, sizeof( base ));
+	v = VR_WeaponNumber( base, key, def );
+
+	if( now - read_at > 2.0 || now < read_at )
+	{
+		char file[96];
+		fs_offset_t len = 0;
+
+		read_at = now;
+		free( text );
+		VR_WeaponFileName( vr_empty_hand.string, file, sizeof( file ));
+		text = (char *)gEngfuncs.fsapi->LoadFileMalloc( file, &len, false );
+	}
+
+	if( text )
+		VR_TextNumber( text, key, &v );
+
+	return v;
+}
+
+qboolean VR_LeftFistWanted( void )
+{
+	char model[64];
+
+	if( !vr_lfist.value || !vr.hand[0].valid || !VR_EmptyHandName()[0] )
+		return false;
+
+	// nothing in the right hand, or one handed item (phone, flare, lantern): the left hand has nothing to do but punch
+	if( !vr_vm_fists && !vr_vm_oneh )
+		return false;
+
+	// not while a weapon is in the left hand
+	if( VR_CofDualModel( model, sizeof( model )))
+		return false;
+
+	return true;
+}
+
+// the right fist's hold, reflected across the middle of the body, on the left controller. f, l, u are the axes of the fist
+// model (the model itself is drawn mirrored: the studio renderer flips it), origin is where its origin goes
+static qboolean VR_LeftFistFrame( vec3_t origin, vec3_t bf, vec3_t bl, vec3_t bu, float *scale )
+{
+	float gx, gy, gz, wp, wy, wr;
+
+	if( !vr.hand[0].valid )
+		return false;
+
+	gx = bound( -40.0f, VR_FistNumber( "vr_vm_grip_x", 0.0f ) + vr_lfist_x.value, 40.0f );
+	gy = bound( -40.0f, -VR_FistNumber( "vr_vm_grip_y", 0.0f ) + vr_lfist_y.value, 40.0f );
+	gz = bound( -40.0f, VR_FistNumber( "vr_vm_grip_z", 0.0f ) + vr_lfist_z.value, 40.0f );
+	wp = VR_FistNumber( "vr_vm_pitch", 0.0f ) + vr_lfist_pitch.value;
+	wy = -VR_FistNumber( "vr_vm_yaw", 0.0f ) + vr_lfist_yaw.value;
+	wr = -VR_FistNumber( "vr_vm_roll", 0.0f ) + vr_lfist_roll.value;
+	*scale = VR_FistNumber( "vr_vm_scale", 0.19f ) * bound( 0.2f, vr_lfist_scale.value, 4.0f );
+
+	VectorCopy( vr.hand[0].fwd, bf );
+	VectorCopy( vr.hand[0].left, bl );
+	VectorCopy( vr.hand[0].up, bu );
+	VR_RotateAxis( bf, bu, wy );
+	VR_RotateAxis( bl, bu, wy );
+	VR_RotateAxis( bf, bl, wp );
+	VR_RotateAxis( bu, bl, wp );
+	VR_RotateAxis( bl, bf, wr );
+	VR_RotateAxis( bu, bf, wr );
+
+	VectorCopy( vr.hand[0].pos, origin );
+	VectorMA( origin, -gx, bf, origin );
+	VectorMA( origin, -gy, bl, origin );
+	VectorMA( origin, -gz, bu, origin );
+	return true;
+}
+
+qboolean VR_GetLeftFistPose( vec3_t origin, vec3_t f, vec3_t l, vec3_t u, float *scale )
+{
+	vec3_t pb;
+
+	if( !VR_LeftFistFrame( origin, f, l, u, scale ))
+		return false;
+
+	// pushed back by the wall, bounced by what it hit (gl_vr_melee.c)
+	VR_MeleePushback( 0, pb );
+	VectorAdd( origin, pb, origin );
+	return true;
+}
+
+// where the left fist is held and its axes, for the collider
+qboolean VR_LeftFistBasis( vec3_t grip, vec3_t f, vec3_t l, vec3_t u )
+{
+	vec3_t origin;
+	float scale;
+
+	if( !VR_LeftFistFrame( origin, f, l, u, &scale ))
+		return false;
+
+	VectorCopy( vr.hand[0].pos, grip );
+	return true;
+}
+
+int VR_EmptyHandSeq( void )
+{
+	return vr_empty_hand_seq.value >= 0.0f ? (int)vr_empty_hand_seq.value : 0;
 }
 
 static qboolean VR_GetDualPose( const char *model, vec3_t origin, float *vang, float *scale )
@@ -3043,7 +3195,7 @@ static void VR_UpdateWeaponProfile( void )
 	{
 		// nothing in hand (new map, menu): forget the weapon, so a stale light cannot stay on
 		vr_tune_model[0] = 0;
-		vr_vm_light = vr_vm_omni = vr_vm_flare = vr_vm_scope = false;
+		vr_vm_light = vr_vm_omni = vr_vm_flare = vr_vm_scope = vr_vm_fists = vr_vm_oneh = false;
 		return;
 	}
 
@@ -3083,6 +3235,8 @@ static void VR_UpdateWeaponProfile( void )
 		vr_vm_mirror_auto = VR_ListMatches( vr_mirror_models.string, base, true );
 		VR_ApplyBuiltinProfile( base );
 		gEngfuncs.Cvar_SetValue( "vr_in_melee", vr_vm_melee ? 1.0f : 0.0f );
+		vr_vm_fists = VR_ContainsNoCase( base, "v_actions" );
+		vr_vm_oneh = VR_ContainsNoCase( base, "mobile" ) || vr_vm_omni;
 		gEngfuncs.Cvar_SetValue( "vr_in_fists", VR_ContainsNoCase( base, "v_actions" ) ? 1.0f : 0.0f );
 		// the left hand throws the punches when the right hand holds a one handed item or nothing
 		gEngfuncs.Cvar_SetValue( "vr_in_oneh", ( VR_ContainsNoCase( base, "mobile" ) || vr_vm_omni ) ? 1.0f : 0.0f );

@@ -162,6 +162,8 @@ static qboolean r_vr_viewmodel;	// the weapon is being drawn at the VR hand
 static cl_entity_t vr_lhand_ent;	// the universal left hand
 float r_sky_scale;		// > 0 while a sky model is drawn: shrinks it to fit the far clip plane
 static float r_vr_lscale;		// > 0: size of the left hand when it is drawn from the weapon model
+static qboolean r_vr_lfist;		// the left hand is the mirrored fist model (v_actions)
+static vec3_t r_vr_lfist_axes[3];	// its axes (forward, left, up)
 
 /*
 ====================
@@ -596,6 +598,18 @@ static void R_StudioSetUpTransform( cl_entity_t *e )
 
 			// mirrored (a left-handed weapon in the right hand), or not
 			tr.fFlipViewModel = r_vr_mirror;
+		}
+		else if( r_vr_viewmodel && e == &vr_lhand_ent && r_vr_lfist )
+		{
+			// the mirrored fist: drawn straight from its axes, and the model is flipped
+			for( int r = 0; r < 3; r++ )
+			{
+				g_studio.rotationmatrix[r][0] = r_vr_lfist_axes[0][r] * scale;
+				g_studio.rotationmatrix[r][1] = r_vr_lfist_axes[1][r] * scale;
+				g_studio.rotationmatrix[r][2] = r_vr_lfist_axes[2][r] * scale;
+			}
+
+			tr.fFlipViewModel = true;
 		}
 	}
 
@@ -2170,7 +2184,7 @@ static void R_StudioDrawPoints( void )
 			bonehide[b] = VR_ViewModelBoneHidden( vrbones[b].name );
 
 		// the arm cut follows the animated wrist of the right hand's weapon
-		if( !R_StudioIsDualEntity( ) && VR_CutFollowWanted( ))
+		if( !R_StudioIsDualEntity( ) && VR_CutFollowWanted( ) && !r_vr_lfist )
 		{
 			int wrist = -1, side = ( RI.currententity == &vr_lhand_ent ) ? 1 : 0;
 
@@ -2352,7 +2366,7 @@ static void R_StudioDrawPoints( void )
 	// inside. Remember that culling was switched off by this very code, so it is switched back on
 	if( glState.faceCull != GL_NONE || r_cull_flipped )
 	{
-		if( R_AllowFlipViewModel( RI.currententity ) || ( r_vr_mirror && RI.currententity == tr.viewent ))
+		if( R_AllowFlipViewModel( RI.currententity ) || ( r_vr_mirror && RI.currententity == tr.viewent ) || ( r_vr_lfist && RI.currententity == &vr_lhand_ent ))
 		{
 			tr.fFlipViewModel = true;
 			GL_Cull( GL_NONE );
@@ -4082,7 +4096,8 @@ static void R_VRDrawLeftHand( void )
 	int idle = 0;
 	float frame = 0.0f;
 	vr_rl_left_t rld;
-	qboolean from_weapon = false;
+	qboolean from_weapon = false, lfist = false;
+	float fist_scale = 0.0f;
 
 	if( VR_ClimbHide())
 		return;
@@ -4096,7 +4111,32 @@ static void R_VRDrawLeftHand( void )
 		from_weapon = rld.weapon_model;
 	}
 
-	if( from_weapon )
+	// a free left hand that can punch is the right fist model, mirrored
+	if( !from_weapon && VR_LeftFistWanted( ))
+	{
+		model_t *fm = gEngfuncs.Mod_ForName( VR_EmptyHandName(), false, true );
+		vec3_t fa[3];
+
+		if( fm && fm->type == mod_studio && VR_GetLeftFistPose( origin, fa[0], fa[1], fa[2], &fist_scale ))
+		{
+			float xy = sqrt( fa[0][0] * fa[0][0] + fa[0][1] * fa[0][1] );
+
+			mod = fm;
+			lfist = true;
+			angles[0] = RAD2DEG( atan2( -fa[0][2], xy ));
+			angles[1] = RAD2DEG( atan2( fa[0][1], fa[0][0] ));
+			angles[2] = RAD2DEG( atan2( fa[1][2], fa[2][2] ));
+			VectorCopy( fa[0], r_vr_lfist_axes[0] );
+			VectorCopy( fa[1], r_vr_lfist_axes[1] );
+			VectorCopy( fa[2], r_vr_lfist_axes[2] );
+		}
+	}
+
+	if( lfist )
+	{
+		// mod, origin and angles are set above
+	}
+	else if( from_weapon )
 	{
 		// the left arm (and a magazine) of the weapon model in your right hand, in one of its animation frames
 		mod = tr.viewent ? tr.viewent->model : NULL;
@@ -4119,7 +4159,13 @@ static void R_VRDrawLeftHand( void )
 	if( !hdr || hdr->numseq <= 0 )
 		return;
 
-	if( from_weapon )
+	if( lfist )
+	{
+		idle = bound( 0, VR_EmptyHandSeq(), hdr->numseq - 1 );
+		frame = 0.0f;
+		r_vr_lscale = fist_scale;
+	}
+	else if( from_weapon )
 	{
 		mstudioseqdesc_t *sd;
 
@@ -4160,13 +4206,18 @@ static void R_VRDrawLeftHand( void )
 	RI.currentmodel = mod;
 	tr.blend = 1.0f;
 
-	tr.fFlipViewModel = false;	// a mirrored weapon (the flare) must not mirror the left hand too
+	tr.fFlipViewModel = lfist;	// a mirrored weapon (the flare) must not mirror the left hand too. The fist is mirrored on purpose
+	r_vr_lfist = lfist;
 	VR_SetHandPass( true );
+	VR_SetLeftFistPass( lfist );
 	g_studio.interpolate = false;
 	R_StudioSetupTimings();
 	R_StudioDrawModelInternal( &vr_lhand_ent, STUDIO_RENDER );
 	g_studio.interpolate = true;
+	VR_SetLeftFistPass( false );
 	VR_SetHandPass( false );
+	r_vr_lfist = false;
+	tr.fFlipViewModel = false;
 
 	// the clip plane may have been left on by the last arm mesh
 	pglDisable( GL_CLIP_PLANE0 );

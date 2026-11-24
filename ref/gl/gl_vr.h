@@ -181,7 +181,7 @@ const float *VR_ReloadRightOffsets( void );
 qboolean VR_ReloadLeftDraw( vr_rl_left_t *d );
 
 // weapon colliders: VR native melee (gl_vr_melee.c)
-extern convar_t vr_hb_x, vr_hb_y, vr_hb_z, vr_hb_sx, vr_hb_sy, vr_hb_sz, vr_hb_pitch, vr_hb_yaw, vr_hb_roll, vr_hb_dmg;
+extern convar_t vr_hb_x, vr_hb_y, vr_hb_z, vr_hb_sx, vr_hb_sy, vr_hb_sz, vr_hb_pitch, vr_hb_yaw, vr_hb_roll, vr_hb_dmg, vr_hb_melee;
 extern convar_t vr_hbl_x, vr_hbl_y, vr_hbl_z, vr_hbl_sx, vr_hbl_sy, vr_hbl_sz, vr_hbl_pitch, vr_hbl_yaw, vr_hbl_roll;
 void VR_MeleeInitCvars( void );
 void VR_MeleeFrame( void );
@@ -194,5 +194,11 @@ void VR_HbFitFinish( void );
 qboolean VR_WeaponBasis( int hand, vec3_t grip, vec3_t f, vec3_t l, vec3_t u );
 float VR_WorldScale( void );
 qboolean VR_IsMeleeModel( const char *base );
+qboolean VR_LeftFistWanted( void );
+qboolean VR_ReloadLeftBusy( void );
+qboolean VR_GetLeftFistPose( vec3_t origin, vec3_t f, vec3_t l, vec3_t u, float *scale );
+qboolean VR_LeftFistBasis( vec3_t grip, vec3_t f, vec3_t l, vec3_t u );
+int VR_EmptyHandSeq( void );
+void VR_SetLeftFistPass( qboolean on );
 
 #endif // GL_VR_H
