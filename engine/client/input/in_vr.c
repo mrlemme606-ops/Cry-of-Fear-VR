@@ -123,7 +123,13 @@ static CVAR_DEFINE_AUTO( vr_melee_enable, "1", FCVAR_ARCHIVE, "1 = the weapon co
 static CVAR_DEFINE_AUTO( vr_key_swing, "mouse1", FCVAR_ARCHIVE, "key pressed when you swing a melee weapon" );
 static CVAR_DEFINE_AUTO( vr_key_whip, "mouse2", FCVAR_ARCHIVE, "key pressed when you swing a gun (pistol whip). empty = nothing" );
 static CVAR_DEFINE_AUTO( vr_key_reload, "r", FCVAR_ARCHIVE, "key pressed for you when a manual reload is finished (the game then does the actual reload)" );
-static CVAR_DEFINE_AUTO( vr_move_snap, "1.5", FCVAR_ARCHIVE, "how quickly your walking direction follows the stick. The game's acceleration (10) and friction (4) are both multiplied by this, so top speed and crouch speed stay the same but turns of direction are faster. 1 = the game's own values" );
+static CVAR_DEFINE_AUTO( vr_move_accel, "1", FCVAR_ARCHIVE, "multiplies the game's acceleration (10) when you start walking. Top speed, crouch speed and stopping are not touched. 1 = the game's own" );
+CVAR_DEFINE_AUTO( vr_move_turn, "0.05", FCVAR_ARCHIVE, "seconds in which the speed across a new walking direction is let go of (0 = off: the game's own slow turning, you slide). Smaller = the walk follows the stick more at once" );
+CVAR_DEFINE_AUTO( vr_move_brake, "0.07", FCVAR_ARCHIVE, "seconds it takes to stop when you let go of the stick (0 = the game's own sliding stop)" );
+static CVAR_DEFINE_AUTO( vr_move_walkzone, "0.8", FCVAR_ARCHIVE, "stick deflection up to which you only walk slowly (0..1). Past it you go on to full speed" );
+static CVAR_DEFINE_AUTO( vr_move_walkspeed, "0.5", FCVAR_ARCHIVE, "the part of the full speed you have at the end of the slow walking zone (0..1)" );
+static CVAR_DEFINE_AUTO( vr_move_axissnap, "8", FCVAR_ARCHIVE, "degrees around straight ahead / back / left / right in which the stick counts as exactly that (stops the slow drift to one side, 0 = off)" );
+static CVAR_DEFINE_AUTO( vr_move_yawsmooth, "0.05", FCVAR_ARCHIVE, "seconds the walking direction takes to follow your head or hand (filters the small shaking of your head, 0 = none)" );
 static CVAR_DEFINE_AUTO( vr_crouch_source, "0", FCVAR_ARCHIVE, "1 = when you crouch in real life the character crouches (hull, speed, low gaps, crouch jumps) but the game does not lower the view at all, so there is no crouch animation to see. 0 = the old way (the renderer gives the lowering back)" );
 static CVAR_DEFINE_AUTO( vr_move_debug, "0", 0, "1 = print the walking numbers 4 times a second while the left stick is pushed (stick, command, real speed, the game's speed limit)" );
 static CVAR_DEFINE_AUTO( vr_debug_move, "0", 0, "print the player's movement type when it changes (helps find where analog movement fails)" );
@@ -181,6 +187,7 @@ static double vr_swing_pending_until, vr_lswing_pending_until;
 // read by the server (sv_phys.c): for the hit of a swing, the player looks from this point along this direction
 static qboolean vr_swing_pending, vr_lswing_pending;
 static double vr_move_dbg_until;
+static void IN_VRMoveTrace_f( void );
 static float vr_qs_yaw;	// the way the hand pointed when the selector opened (radians): 1 2 3 run from its left to its right
 static double vr_a_since;
 static qboolean vr_a_crouching;	// the crouch comes from holding A
@@ -679,7 +686,14 @@ void IN_VRInit( void )
 	Cvar_RegisterVariable( &vr_debug_move );
 	Cvar_RegisterVariable( &vr_move_debug );
 	Cvar_RegisterVariable( &vr_crouch_source );
-	Cvar_RegisterVariable( &vr_move_snap );
+	Cvar_RegisterVariable( &vr_move_accel );
+	Cvar_RegisterVariable( &vr_move_turn );
+	Cvar_RegisterVariable( &vr_move_brake );
+	Cvar_RegisterVariable( &vr_move_walkzone );
+	Cvar_RegisterVariable( &vr_move_walkspeed );
+	Cvar_RegisterVariable( &vr_move_axissnap );
+	Cvar_RegisterVariable( &vr_move_yawsmooth );
+	Cmd_AddCommand( "vr_move_trace", IN_VRMoveTrace_f, "record the walking for a few seconds (hold the stick forward steadily) and print how even it is: vr_move_trace [seconds]" );
 
 	for( i = 0; i < VRB_COUNT; i++ )
 		Cvar_RegisterVariable( vr_key_cvars[i] );
@@ -1478,6 +1492,129 @@ float VR_CrouchViewShift( void )
 	return pm->player_mins[pm->usehull][2] - pm->player_mins[0][2];
 }
 
+// ---- vr_move_trace: how even is the walking? ----
+static struct
+{
+	qboolean	on;
+	double		end, seconds;
+	int		frames, steady;
+	double		ft_sum, ft_sq, ft_min, ft_max;
+	int		ft_hist[40];
+	int		dropped;
+	double		step_sum, step_sq;	// units moved per millisecond, only while the character really walks
+	int		step_n;
+	int		spikes;
+	vec3_t		last_org;
+	qboolean	last_ok;
+	double		stick_sum;
+	double		fwd_err_sum;	// how far the real walking direction was from the stick (degrees)
+	int		fwd_err_n;
+} vr_mt;
+
+static void IN_VRMoveTrace_f( void )
+{
+	float secs = ( Cmd_Argc() > 1 ) ? Q_atof( Cmd_Argv( 1 )) : 6.0f;
+
+	memset( &vr_mt, 0, sizeof( vr_mt ));
+	vr_mt.on = true;
+	vr_mt.seconds = bound( 2.0f, secs, 30.0f );
+	vr_mt.end = host.realtime + vr_mt.seconds;
+	vr_mt.ft_min = 1.0e9;
+	Con_Printf( "VR move trace: hold the left stick straight forward and walk for %.0f seconds...\n", vr_mt.seconds );
+}
+
+static void IN_VRMoveTracePrint( void )
+{
+	double n = Q_max( vr_mt.frames, 1 ), ft_avg = vr_mt.ft_sum / n, ft_sd = sqrt( Q_max( 0.0, vr_mt.ft_sq / n - ft_avg * ft_avg ));
+	double sn = Q_max( vr_mt.step_n, 1 ), st_avg = vr_mt.step_sum / sn, st_sd = sqrt( Q_max( 0.0, vr_mt.step_sq / sn - st_avg * st_avg ));
+	int i;
+
+	Con_Printf( "VR move trace: %d frames in %.1f s (%.1f fps)\n", vr_mt.frames, vr_mt.seconds, vr_mt.frames / vr_mt.seconds );
+	Con_Printf( "  frame time: average %.2f ms, min %.2f, max %.2f, spread (sd) %.2f ms, frames longer than 1.5x the average: %d\n",
+		ft_avg, vr_mt.ft_min, vr_mt.ft_max, ft_sd, vr_mt.dropped );
+	Con_Printf( "  whole-millisecond frame times (ms: count):" );
+
+	for( i = 0; i < 40; i++ )
+	{
+		if( vr_mt.ft_hist[i] > vr_mt.frames / 50 )
+			Con_Printf( " %d: %d", i, vr_mt.ft_hist[i] );
+	}
+
+	Con_Printf( "\n" );
+
+	if( vr_mt.step_n > 20 )
+	{
+		Con_Printf( "  walking (%d frames): %.3f units per ms, spread %.1f%% of that, jumps of more than 25%%: %d\n",
+			vr_mt.step_n, st_avg, 100.0 * st_sd / Q_max( st_avg, 0.0001 ), vr_mt.spikes );
+		Con_Printf( "  the picture's steps are %s\n", ( st_sd / Q_max( st_avg, 0.0001 ) < 0.08 ) ? "even" : "UNEVEN (this is the judder)" );
+	}
+	else Con_Printf( "  you did not walk (the stick has to be held while the trace runs)\n" );
+
+	if( vr_mt.fwd_err_n > 20 )
+		Con_Printf( "  walking direction vs the stick: on average %.1f degrees off (%d samples)\n", vr_mt.fwd_err_sum / vr_mt.fwd_err_n, vr_mt.fwd_err_n );
+}
+
+static void IN_VRMoveTraceFrame( void )
+{
+	double ft = host.frametime * 1000.0;
+	vec3_t d;
+
+	if( !vr_mt.on )
+		return;
+
+	if( host.realtime >= vr_mt.end )
+	{
+		vr_mt.on = false;
+		IN_VRMoveTracePrint();
+		return;
+	}
+
+	vr_mt.frames++;
+	vr_mt.ft_sum += ft;
+	vr_mt.ft_sq += ft * ft;
+	vr_mt.ft_min = Q_min( vr_mt.ft_min, ft );
+	vr_mt.ft_max = Q_max( vr_mt.ft_max, ft );
+	vr_mt.ft_hist[bound( 0, (int)( ft + 0.5 ), 39 )]++;
+
+	if( vr_mt.frames > 30 && ft > ( vr_mt.ft_sum / vr_mt.frames ) * 1.5 )
+		vr_mt.dropped++;
+
+	if( vr_mt.last_ok && ft > 0.5 && clgame.pmove )
+	{
+		float step, speed = sqrt( clgame.pmove->velocity[0] * clgame.pmove->velocity[0] + clgame.pmove->velocity[1] * clgame.pmove->velocity[1] );
+
+		VectorSubtract( cl.simorg, vr_mt.last_org, d );
+		d[2] = 0.0f;
+		step = VectorLength( d ) / ft;	// units per ms (what the player sees)
+
+		if( speed > 100.0f && step < 2.0f )
+		{
+			double avg = vr_mt.step_n ? vr_mt.step_sum / vr_mt.step_n : step;
+
+			if( vr_mt.step_n > 10 && fabs( step - avg ) > avg * 0.25 )
+				vr_mt.spikes++;
+
+			vr_mt.step_sum += step;
+			vr_mt.step_sq += step * step;
+			vr_mt.step_n++;
+
+			// direction of the real velocity against the stick (stick forward = along the view yaw)
+			if( fabs( vr_in_move_fwd.value ) > 0.9f && fabs( vr_in_move_side.value ) < 0.3f )
+			{
+				float vyaw = RAD2DEG( atan2( clgame.pmove->velocity[1], clgame.pmove->velocity[0] ));
+				float want = cl.viewangles[YAW] + vr_in_head_yaw.value;
+				float err = anglemod( vyaw - want + 180.0f ) - 180.0f;
+
+				vr_mt.fwd_err_sum += fabs( err );
+				vr_mt.fwd_err_n++;
+			}
+		}
+	}
+
+	VectorCopy( cl.simorg, vr_mt.last_org );
+	vr_mt.last_ok = true;
+}
+
 void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 {
 	float yaw = 0.0f;
@@ -1573,24 +1710,24 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 			if(( cv = Cvar_FindVar( "gl_screenblur" )) != NULL ) Cvar_DirectSetValue( cv, 0.0f );
 		}
 
-		// walking: acceleration and friction are scaled together (see vr_move_snap), on every map and when the setting changes
+		// walking: the game's friction stays what it is (a higher one slowed the crouch), only the start of walking can be made
+		// faster (vr_move_accel). Changing direction and stopping are made quick by common/pm_vrsteer.c
 		{
-			static float snap_done = -1.0f;
-			static char snap_map[64];
+			static float accel_done = -1.0f;
+			static char accel_map[64];
 
-			if( snap_done != vr_move_snap.value || Q_strcmp( snap_map, clgame.mapname ))
+			if( accel_done != vr_move_accel.value || Q_strcmp( accel_map, clgame.mapname ))
 			{
 				convar_t *acc = Cvar_FindVar( "sv_accelerate" ), *fric = Cvar_FindVar( "sv_friction" );
-				float k = bound( 1.0f, vr_move_snap.value, 4.0f );
 
 				if( acc && fric )
 				{
-					Cvar_DirectSetValue( acc, 10.0f * k );
-					Cvar_DirectSetValue( fric, 4.0f * k );
+					Cvar_DirectSetValue( acc, 10.0f * bound( 1.0f, vr_move_accel.value, 4.0f ));
+					Cvar_DirectSetValue( fric, 4.0f );
 				}
 
-				snap_done = vr_move_snap.value;
-				Q_strncpy( snap_map, clgame.mapname, sizeof( snap_map ));
+				accel_done = vr_move_accel.value;
+				Q_strncpy( accel_map, clgame.mapname, sizeof( accel_map ));
 			}
 		}
 	}
@@ -1616,6 +1753,9 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 
 	in_game = active && cls.key_dest == key_game && !cl.paused && !cl.intermission;
 	buttons = (int)vr_in_buttons.value;
+
+	if( in_game )
+		IN_VRMoveTraceFrame();
 
 	// the reload system keeps some buttons away from the game while it is using them, and presses reload when it is done
 	buttons &= ~(int)vr_in_mask.value;
@@ -1712,14 +1852,50 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 			(int)vr_in_hand_valid.value, vr_in_hand_yaw.value, vr_in_hand_pitch.value );
 	}
 
-	// the stick means "walk where I look". the game walks along its aim, so rotate the stick by the difference
-	rot = (( vr_move_ref.value >= 0.5f ) ? vr_in_wand_yaw.value : head_rel ) - aim_rel;
+	// the stick means "walk where I look". the game walks along its aim, so rotate the stick by the difference.
+	// The direction you look in is filtered a little (vr_move_yawsmooth): the small shaking of a head is not a turn, and
+	// the walk now follows its direction at once
 	{
-		float a = DEG2RAD( rot );
-		float c = cos( a ), s = sin( a );
+		static float walk_ref;
+		static qboolean walk_ref_ok;
+		float raw = ( vr_move_ref.value >= 0.5f ) ? vr_in_wand_yaw.value : head_rel;
+		float tau = vr_move_yawsmooth.value, dyaw = anglemod( raw - walk_ref + 180.0f ) - 180.0f;
+		float sf = vr_in_move_fwd.value, ss = vr_in_move_side.value;
 
-		fwd = vr_in_move_fwd.value * c + vr_in_move_side.value * s;
-		side = -vr_in_move_fwd.value * s + vr_in_move_side.value * c;
+		if( !walk_ref_ok || tau <= 0.0f || host.frametime <= 0.0 || fabs( dyaw ) > 60.0f )
+			walk_ref = raw;
+		else
+			walk_ref += dyaw * ( 1.0f - exp( -host.frametime / tau ));
+
+		walk_ref_ok = in_game;
+		rot = walk_ref - aim_rel;
+
+		// a stick is never quite straight: a push that is within a few degrees of straight ahead (or back, left, right)
+		// is exactly that, so you do not drift to one side
+		if( vr_move_axissnap.value > 0.0f )
+		{
+			float len = sqrt( sf * sf + ss * ss );
+
+			if( len > 0.2f )
+			{
+				float ang = RAD2DEG( atan2( ss, sf )), snap = bound( 0.0f, vr_move_axissnap.value, 20.0f );
+				float nearest = floor(( ang + 45.0f ) / 90.0f ) * 90.0f;
+
+				if( fabs( ang - nearest ) < snap )
+				{
+					sf = len * cos( DEG2RAD( nearest ));
+					ss = len * sin( DEG2RAD( nearest ));
+				}
+			}
+		}
+
+		{
+			float a = DEG2RAD( rot );
+			float c = cos( a ), sn = sin( a );
+
+			fwd = sf * c + ss * sn;
+			side = -sf * sn + ss * c;
+		}
 	}
 
 	// ladders only react to real key presses, so use the keys there
@@ -2037,22 +2213,36 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 	// analog walking, when the keys are not doing it
 	if( !digital )
 	{
-		// 100% stick is 100% speed, and a gentle push is a gentle walk: a small dead zone, then a straight line up to
-		// vr_move_full (the stick rarely reaches 1.0)
+		// The stick has two zones. A small dead zone, then up to vr_move_walkzone (80%) a slow walk, as slow as a gentle push
+		// asks for (up to vr_move_walkspeed of the full speed at the end of it), and from there to vr_move_full a smooth
+		// rise to the game's full speed. Pulled all the way, you walk at the game's own full speed
 		{
 			float m = sqrt( fwd * fwd + side * side );
-			float dz = vr_move_deadzone.value, full = Q_max( vr_move_full.value, dz + 0.1f );
+			float dz = bound( 0.0f, vr_move_deadzone.value, 0.5f ), zone = bound( dz + 0.1f, vr_move_walkzone.value, 0.97f );
+			float full = bound( zone + 0.02f, vr_move_full.value, 1.0f ), wsp = bound( 0.05f, vr_move_walkspeed.value, 0.95f );
+			float f;
 
 			if( m < dz )
+				f = 0.0f;
+			else if( m < zone )
 			{
-				fwd = side = 0.0f;
+				float t = ( m - dz ) / ( zone - dz );
+
+				f = wsp * t * ( 2.0f - t );	// quick to leave the dead zone, gentle at the top of the zone
 			}
 			else
 			{
-				float k = bound( 0.0f, ( m - dz ) / ( full - dz ), 1.0f ) / m;
+				float t = bound( 0.0f, ( m - zone ) / ( full - zone ), 1.0f );
 
-				fwd *= k;
-				side *= k;
+				f = wsp + ( 1.0f - wsp ) * t * t * ( 3.0f - 2.0f * t );
+			}
+
+			if( f <= 0.0f )
+				fwd = side = 0.0f;
+			else
+			{
+				fwd *= f / m;
+				side *= f / m;
 			}
 		}
 
@@ -2064,19 +2254,36 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 			// of it: a gentle push is a gentle walk, a full push is a full walk
 			// one speed for every direction: the stick's direction is kept, only its length is scaled. (Before, forward and
 			// sideways had their own numbers and the diagonals fell between them: forward-left was slow)
-			static float top = 250.0f;
+			// the full speed of the game is not the same standing, crouched and sprinting, so each has its own number. They are
+			// learned from what a full push really gives, and a number only goes down once the speed has stopped changing
+			// (it used to go down all the time, so a gentle push was slow for a while after crouching or climbing)
+			static float tops[3] = { 250.0f, 85.0f, 400.0f };
+			static float last_speed;
+			static int settled;
 			float speed = clgame.pmove ? sqrt( clgame.pmove->velocity[0] * clgame.pmove->velocity[0] + clgame.pmove->velocity[1] * clgame.pmove->velocity[1] ) : 0.0f;
 			qboolean sprint = FBitSet( buttons, BIT( VRB_LSTICK ));
+			qboolean duck = clgame.pmove && ( FBitSet( clgame.pmove->flags, FL_DUCKING ) || clgame.pmove->bInDuck );
+			int state = duck ? 1 : ( sprint ? 2 : 0 );
 			float len = sqrt( fwd * fwd + side * side );
+
+			if( fabs( speed - last_speed ) < 2.0f ) settled = Q_min( settled + 1, 1000 );
+			else settled = 0;
+
+			last_speed = speed;
 
 			if( len > 0.001f )
 			{
-				// at a full push the speed that comes out is the game's own maximum: remember it, any direction counts
-				if( clgame.pmove && clgame.pmove->onground != -1 && !sprint && speed > 40.0f && len > 0.97f )
-					top = Q_max( top * 0.9995f, speed );
+				// at a full push the speed that comes out is the game's own maximum for that state
+				if( clgame.pmove && clgame.pmove->onground != -1 && speed > 40.0f && len > 0.97f )
+				{
+					if( speed > tops[state] )
+						tops[state] = speed;
+					else if( settled > 8 )
+						tops[state] += ( speed - tops[state] ) * 0.05f;
+				}
 
 				{
-					float cmdlen = ( len > 0.97f ) ? vr_move_cmd.value : len * top;
+					float cmdlen = ( len > 0.97f ) ? vr_move_cmd.value : len * tops[state];
 
 					cmd->forwardmove += fwd / len * cmdlen;
 					cmd->sidemove += side / len * cmdlen;

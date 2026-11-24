@@ -970,6 +970,9 @@ void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, int random_seed )
 	// setup playermove state
 	SV_SetupPMove( svgame.pmove, cl, ucmd, cl->physinfo );
 
+	// VR walking: the same adjustment as the client's prediction makes (common/pm_vrsteer.c)
+	PM_VRSteer( svgame.pmove );
+
 	// motor!
 	svgame.dllFuncs.pfnPM_Move( svgame.pmove, true );
 

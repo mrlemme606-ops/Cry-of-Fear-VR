@@ -22,6 +22,11 @@ GNU General Public License for more details.
 typedef int (*pfnIgnore)( physent_t *pe );	// custom trace filter
 
 //
+// pm_vrsteer.c: VR walking, the direction of the walk follows the stick at once
+//
+void PM_VRSteer( playermove_t *pm );
+
+//
 // pm_trace.c
 //
 void Pmove_Init( void );

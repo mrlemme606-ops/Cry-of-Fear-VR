@@ -927,6 +927,9 @@ static void CL_RunUsercmd( local_state_t *from, local_state_t *to, usercmd_t *u,
 		// setup playermove state
 		CL_SetupPMove( clgame.pmove, from, &cmd, runfuncs, *time );
 
+		// VR walking: the same adjustment as the server makes (common/pm_vrsteer.c)
+		PM_VRSteer( clgame.pmove );
+
 		// motor!
 		clgame.dllFuncs.pfnPlayerMove( clgame.pmove, false );
 
