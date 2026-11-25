@@ -44,6 +44,8 @@ static CVAR_DEFINE_AUTO( vr_in_ui_hit, "0", 0, "(internal) the right hand points
 static CVAR_DEFINE_AUTO( vr_swing_sound, "1", FCVAR_ARCHIVE, "1 = a real swing plays the weapon's swing sound at once, and the game's own late swing sound is muted" );
 static CVAR_DEFINE_AUTO( vr_swing_sounds, "swing+miss+slash+whoosh+woosh+whip", FCVAR_ARCHIVE, "name parts of the game's swing sounds (separated by +)" );
 static CVAR_DEFINE_AUTO( vr_melee_hit_sounds, "hitbody+melee_hit", FCVAR_ARCHIVE, "name parts of the sounds of a hit that hurts someone (separated by +). The hand only vibrates when one plays right after a swing. vr_sound_debug 2 lists the sounds after a swing" );
+static CVAR_DEFINE_AUTO( vr_in_dual_srv, "-1", 0, "(internal) does the game (server) have a dual wield going: 1 yes, 0 no, -1 not known" );
+static CVAR_DEFINE_AUTO( vr_slot_cone, "12", FCVAR_ARCHIVE, "the quick slot selector opens when the right stick is pushed up within this many degrees of straight up (so turning with the stick does not open it)" );
 static CVAR_DEFINE_AUTO( vr_in_qs_pick, "0", 0, "(internal) the quick slot the renderer says the hand is over" );
 static CVAR_DEFINE_AUTO( vr_in_qs_on, "0", 0, "(internal) the quick slot selector is open" );
 static CVAR_DEFINE_AUTO( vr_in_qs_sel, "0", 0, "(internal) the quick slot the hand is over (0 = none)" );
@@ -180,6 +182,7 @@ static qboolean vr_crouch_toggled, vr_dodging, vr_qs_active, vr_lclick_down;
 static int vr_qs_sel;
 static vec3_t vr_qs_start;
 extern void IN_VRMeleeInit( void );
+extern int SV_VRDualState( void );
 static int vr_cur_weapon = -1;
 static double vr_swing_hold, vr_lswing_hold;
 static double vr_swing_pending_until, vr_lswing_pending_until;
@@ -611,6 +614,8 @@ void IN_VRInit( void )
 	Cvar_RegisterVariable( &vr_swing_sound );
 	Cvar_RegisterVariable( &vr_swing_sounds );
 	Cvar_RegisterVariable( &vr_melee_hit_sounds );
+	Cvar_RegisterVariable( &vr_in_dual_srv );
+	Cvar_RegisterVariable( &vr_slot_cone );
 	Cvar_RegisterVariable( &vr_in_qs_pick );
 	Cvar_RegisterVariable( &vr_in_qs_on );
 	Cvar_RegisterVariable( &vr_in_qs_sel );
@@ -1757,6 +1762,9 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 	if( in_game )
 		IN_VRMoveTraceFrame();
 
+	// what the game itself says about a dual wield (the renderer trusts this over the messages the client has heard)
+	Cvar_DirectSetValue( &vr_in_dual_srv, in_game ? (float)SV_VRDualState() : -1.0f );
+
 	// the reload system keeps some buttons away from the game while it is using them, and presses reload when it is done
 	buttons &= ~(int)vr_in_mask.value;
 
@@ -2047,7 +2055,8 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 	// Jumping is the A button: a tap jumps, holding it also crouches, for jumps that need a crouch in the air
 	y = vr_in_stick_y.value;
 
-	if( in_game && y > 0.7f && !vr_up_latched )
+	// "up" means straight up: pushed up but already well to the side is a turn, not the quick slot selector
+	if( in_game && y > 0.7f && !vr_up_latched && fabs( vr_in_turn.value ) <= y * tan( DEG2RAD( bound( 2.0f, vr_slot_cone.value, 45.0f ))))
 	{
 		vec3_t o, d;
 

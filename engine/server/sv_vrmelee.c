@@ -246,3 +246,87 @@ int SV_VRMeleeHit( int entnum, const vec3_t point, const vec3_t dir, float damag
 	return -1;
 #endif
 }
+
+/*
+=============
+SV_VRDualState
+
+Does the game itself have a dual wield going? The client side only hears "DualWield" messages, and one can stay behind (after
+a save is loaded, or after the inventory was used in an unusual order), so what the client says is not enough. The server
+knows: a dual wield is a weapon of its own, "weapon_dualweapon", and it is the weapon in the player's hand.
+
+Returns 1 = the weapon in the player's hand is the dual weapon, 0 = it is not, -1 = cannot be known (not this build of hl.dll,
+no game running). The place of "the weapon in the player's hand" in the player object (index 2379 of the object, the same
+one the game's own dual wield code uses) is only trusted for the build of hl.dll it was read from.
+=============
+*/
+int SV_VRDualState( void )
+{
+#if XASH_WIN32 && XASH_X86
+	static int identity = -1;	// -1 not checked, 0 other build, 1 the build the layout was read from
+	edict_t *player, *ed;
+	entvars_t *pev;
+	void *active;
+	const char *name;
+
+	if( sv.state != ss_active || svs.maxclients != 1 )
+		return -1;
+
+	if( identity < 0 )
+	{
+		const byte *base = (const byte *)svgame.hInstance;
+		uint32_t nt;
+
+		identity = 0;
+
+		if( base && base[0] == 'M' && base[1] == 'Z' )
+		{
+			nt = *(const uint32_t *)( base + 0x3C );
+
+			if( nt >= 0x40 && nt < 0x1000 && base[nt] == 'P' && base[nt + 1] == 'E' )
+			{
+				uint32_t stamp = *(const uint32_t *)( base + nt + 8 );
+				uint32_t image = *(const uint32_t *)( base + nt + 24 + 56 );
+				uint32_t ibase = *(const uint32_t *)( base + nt + 24 + 28 );
+
+				// the hl.dll of Cry of Fear 1.4 (the decompile the layout comes from)
+				if( stamp == 0x5F9C9EBAu && image == 0x263000u && ibase == 0x10000000u )
+					identity = 1;
+			}
+		}
+
+		if( !identity )
+			Con_Printf( S_WARN "VR: hl.dll is not the build this mod knows, the dual wield is read from the client's messages only\n" );
+	}
+
+	if( identity != 1 )
+		return -1;
+
+	player = &svgame.edicts[1];
+
+	if( !SV_IsValidEdict( player ) || !player->pvPrivateData )
+		return -1;
+
+	// CBasePlayer::m_pActiveItem
+	active = *(void **)((byte *)player->pvPrivateData + 2379 * 4 );
+
+	if( !active )
+		return 0;
+
+	// CBaseEntity: virtual table, then the entvars. It has to be the entvars of a real entity of the game that owns this object
+	pev = *(entvars_t **)((byte *)active + 4 );
+
+	if( !pev )
+		return -1;
+
+	ed = pev->pContainingEntity;
+
+	if( !ed || ed < svgame.edicts || ed >= svgame.edicts + svgame.numEntities || &ed->v != pev || ed->pvPrivateData != active )
+		return -1;
+
+	name = SV_GetString( pev->classname );
+	return !Q_strcmp( name, "weapon_dualweapon" ) ? 1 : 0;
+#else
+	return -1;
+#endif
+}

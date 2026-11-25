@@ -750,6 +750,7 @@ qboolean VR_CofDualModel( char *out, int size )
 	// the real clock: the game's own time restarts when a door loads the next part of the map
 	double now = gp_host ? gp_host->realtime : 0.0;
 	static int last_mode = -99;
+	int server_state = -1;
 
 	if( !cof.ok || !cof.dual_ok )
 		return false;
@@ -759,11 +760,30 @@ qboolean VR_CofDualModel( char *out, int size )
 
 	last_mode = *cof.dualmode;
 
+	// The game itself knows whether a dual wield is going (the weapon in the player's hand is "weapon_dualweapon": the engine
+	// publishes that as vr_in_dual_srv). What the client heard is only used with it: the game's messages can stay behind
+	// (after a save was loaded, or after the inventory was used in an odd order), and then they say "dual wield" for a weapon
+	// that is not in the left hand, or hide a dual wield that really is going on
+	{
+		static cvar_t *srv;
+		float state;
+
+		if( !srv )
+			srv = gEngfuncs.pfnGetCvarPointer( "vr_in_dual_srv" );
+
+		state = srv ? srv->value : -1.0f;
+		server_state = state > 0.5f ? 1 : ( state > -0.5f ? 0 : -1 );
+	}
+
+	if( server_state == 0 )
+		return false;
+
 	// a weapon held with two hands leaves no hand for another weapon. After a save was loaded the game can still say "dual
 	// wield" with a shotgun in the right hand: that is ignored here, so the universal left hand is back at once
 	// After a save was loaded the game can keep saying "dual wield" when the weapon in the right hand is changed (it is only
 	// cleared properly when you dual wield again). The pair of weapons is remembered when a dual wield is first seen: if the
 	// right hand then holds something else, the left weapon is not shown, and the right trigger shoots again
+	if( server_state < 0 )
 	{
 		static char pair_left[64], pair_right[64];
 		static double pair_since;
