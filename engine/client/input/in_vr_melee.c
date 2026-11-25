@@ -24,10 +24,13 @@ SV_VRMeleeHit (server/sv_vrmelee.c), which calls the game's own TraceAttack and 
 #include "client.h"
 #include "const.h"
 
+extern void R_BloodSprite( const vec3_t org, int colorIndex, int modelIndex, int modelIndex2, float size );
 extern int SV_VRMeleeHit( int entnum, const vec3_t point, const vec3_t dir, float damage, int bits, qboolean effects );
 
 static CVAR_DEFINE_AUTO( vr_melee_enable_dmg, "1", FCVAR_ARCHIVE, "1 = a hit of a weapon collider hurts what it hits (0 = the weapons only collide and make sounds)" );
 static CVAR_DEFINE_AUTO( vr_melee_fx, "1", FCVAR_ARCHIVE, "1 = hits go through the game's TraceAttack (blood, hit groups, breakable sounds). 0 = plain TakeDamage" );
+static CVAR_DEFINE_AUTO( vr_melee_blood, "1", FCVAR_ARCHIVE, "1 = a hit that hurts a creature makes a blood spurt (the same effect the game makes for its own hits). 0 = none" );
+static CVAR_DEFINE_AUTO( vr_melee_blood_color, "247", FCVAR_ARCHIVE, "palette colour of the blood of a melee hit (247 = red, the game's own)" );
 static CVAR_DEFINE_AUTO( vr_melee_dmg_scale, "1", FCVAR_ARCHIVE, "damage of all hits of the weapon colliders, as a multiplier" );
 static CVAR_DEFINE_AUTO( vr_melee_debug_events, "0", 0, "1 = print every hit and swing of the weapon colliders" );
 
@@ -73,6 +76,44 @@ static float IN_VRMeleeBaseDamage( const vr_melee_class_t *c )
 		return Cvar_VariableValue( name );
 
 	return c->fallback;
+}
+
+// the index of a model the server told the client about (the game's blood sprites)
+static int IN_VRMeleeModelIndex( const char *name )
+{
+	int i;
+
+	for( i = 1; i < MAX_MODELS; i++ )
+	{
+		if( cl.models[i] && !Q_stricmp( cl.models[i]->name, name ))
+			return i;
+	}
+
+	return 0;
+}
+
+// the blood spurt the game's own TE_BLOODSPRITE makes (UTIL_BloodDrips of the game's code): a puff and drops
+static void IN_VRMeleeBlood( const vec3_t pos, float damage )
+{
+	static int spray, drop;
+	static char map[64];
+
+	if( Q_strcmp( map, clgame.mapname ))
+	{
+		Q_strncpy( map, clgame.mapname, sizeof( map ));
+		spray = drop = 0;
+	}
+
+	if( !vr_melee_blood.value )
+		return;
+
+	if( !spray ) spray = IN_VRMeleeModelIndex( "sprites/bloodspray.spr" );
+	if( !drop ) drop = IN_VRMeleeModelIndex( "sprites/blood.spr" );
+
+	if( !spray || !drop )
+		return;
+
+	R_BloodSprite( pos, (int)vr_melee_blood_color.value, spray, drop, bound( 3.0f, damage / 10.0f, 16.0f ));
 }
 
 static void IN_VRMeleePlay( const char *const list[2], const vec3_t pos, int ent )
@@ -157,7 +198,10 @@ static void IN_VRMeleeEvent_f( void )
 		Con_Printf( "VR melee: hit entity %d for %.1f damage, result %d\n", ent, damage, result );
 
 	if( result == 1 )
+	{
 		IN_VRMeleePlay( c->body, p, ent );
+		IN_VRMeleeBlood( p, damage );
+	}
 	else if( result >= 0 )
 		IN_VRMeleePlay( c->wall, p, ent );
 }
@@ -166,6 +210,8 @@ void IN_VRMeleeInit( void )
 {
 	Cvar_RegisterVariable( &vr_melee_enable_dmg );
 	Cvar_RegisterVariable( &vr_melee_fx );
+	Cvar_RegisterVariable( &vr_melee_blood );
+	Cvar_RegisterVariable( &vr_melee_blood_color );
 	Cvar_RegisterVariable( &vr_melee_dmg_scale );
 	Cvar_RegisterVariable( &vr_melee_debug_events );
 	Cmd_AddCommand( "vr_melee_event", IN_VRMeleeEvent_f, "(internal) a hit or a swing of a weapon collider" );

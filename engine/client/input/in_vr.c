@@ -132,7 +132,7 @@ static CVAR_DEFINE_AUTO( vr_move_walkzone, "0.8", FCVAR_ARCHIVE, "stick deflecti
 static CVAR_DEFINE_AUTO( vr_move_walkspeed, "0.5", FCVAR_ARCHIVE, "the part of the full speed you have at the end of the slow walking zone (0..1)" );
 static CVAR_DEFINE_AUTO( vr_move_axissnap, "8", FCVAR_ARCHIVE, "degrees around straight ahead / back / left / right in which the stick counts as exactly that (stops the slow drift to one side, 0 = off)" );
 static CVAR_DEFINE_AUTO( vr_move_yawsmooth, "0.05", FCVAR_ARCHIVE, "seconds the walking direction takes to follow your head or hand (filters the small shaking of your head, 0 = none)" );
-static CVAR_DEFINE_AUTO( vr_crouch_source, "0", FCVAR_ARCHIVE, "1 = when you crouch in real life the character crouches (hull, speed, low gaps, crouch jumps) but the game does not lower the view at all, so there is no crouch animation to see. 0 = the old way (the renderer gives the lowering back)" );
+static CVAR_DEFINE_AUTO( vr_crouch_source, "1", FCVAR_ARCHIVE, "1 = when you crouch in real life the character crouches (hull, speed, low gaps, crouch jumps) but the game does not lower the view at all, so there is no crouch animation to see. 0 = the old way (the renderer gives the lowering back)" );
 static CVAR_DEFINE_AUTO( vr_move_debug, "0", 0, "1 = print the walking numbers 4 times a second while the left stick is pushed (stick, command, real speed, the game's speed limit)" );
 static CVAR_DEFINE_AUTO( vr_debug_move, "0", 0, "print the player's movement type when it changes (helps find where analog movement fails)" );
 

@@ -1774,6 +1774,14 @@ void VR_ViewModelClip( qboolean on )
 	}
 	VectorMA( vr.hand[hnd].pos, -cut, n, c );
 
+	// the weapon can be pushed back by a wall or by the other hand (gl_vr_melee.c): the cut goes with it, so the arm stays cut
+	{
+		vec3_t pb;
+
+		VR_MeleePushback( hnd, pb );
+		VectorAdd( c, pb, c );
+	}
+
 	// the right hand's weapon: the plane sits on the animated wrist and runs along the arm, so the cut stays at the
 	// same place of the arm whatever the animation does (the controller does not move with the slide of a shotgun)
 	if( !vr_dual_pass && !vr_lfist_pass && vr_follow_valid[vr_left_pass ? 1 : 0] && vr_cut_follow.value != 0.0f )

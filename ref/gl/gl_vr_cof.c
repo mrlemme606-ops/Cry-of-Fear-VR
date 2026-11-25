@@ -755,35 +755,30 @@ qboolean VR_CofDualModel( char *out, int size )
 	if( !cof.ok || !cof.dual_ok )
 		return false;
 
-	if( vr_dual_dbg.value && *cof.dualmode != last_mode )
-		gEngfuncs.Con_Printf( "VR dual: the game's dual wield mode is now %d, left weapon '%s'\n", *cof.dualmode, cof.dualname );
-
-	last_mode = *cof.dualmode;
 
 	// The game itself knows whether a dual wield is going (the weapon in the player's hand is "weapon_dualweapon": the engine
-	// publishes that as vr_in_dual_srv). What the client heard is only used with it: the game's messages can stay behind
-	// (after a save was loaded, or after the inventory was used in an odd order), and then they say "dual wield" for a weapon
-	// that is not in the left hand, or hide a dual wield that really is going on
+	// publishes that as vr_in_dual_srv, 1 = yes). It is only used to say YES where the guess below says no (a slow change of
+	// weapons made the guess give up on a dual wield that was really going), never to say no: the guess alone decided that
+	// until now, and it works for the stale messages after a save is loaded
 	{
 		static cvar_t *srv;
-		float state;
 
 		if( !srv )
 			srv = gEngfuncs.pfnGetCvarPointer( "vr_in_dual_srv" );
 
-		state = srv ? srv->value : -1.0f;
-		server_state = state > 0.5f ? 1 : ( state > -0.5f ? 0 : -1 );
+		server_state = ( srv && srv->value > 0.5f ) ? 1 : (( srv && srv->value > -0.5f ) ? 0 : -1 );
 	}
 
-	if( server_state == 0 )
-		return false;
+	if( vr_dual_dbg.value && *cof.dualmode != last_mode )
+		gEngfuncs.Con_Printf( "VR dual: the game's dual wield mode is now %d, left weapon '%s', the game itself says dual wield: %s\n", *cof.dualmode, cof.dualname, server_state > 0 ? "yes" : ( server_state == 0 ? "no" : "not known" ));
+
+	last_mode = *cof.dualmode;
 
 	// a weapon held with two hands leaves no hand for another weapon. After a save was loaded the game can still say "dual
 	// wield" with a shotgun in the right hand: that is ignored here, so the universal left hand is back at once
 	// After a save was loaded the game can keep saying "dual wield" when the weapon in the right hand is changed (it is only
 	// cleared properly when you dual wield again). The pair of weapons is remembered when a dual wield is first seen: if the
 	// right hand then holds something else, the left weapon is not shown, and the right trigger shoots again
-	if( server_state < 0 )
 	{
 		static char pair_left[64], pair_right[64];
 		static double pair_since;
@@ -802,7 +797,7 @@ qboolean VR_CofDualModel( char *out, int size )
 			}
 			else if( now - pair_since < 1.5 )
 				Q_strncpy( pair_right, rw, sizeof( pair_right ));	// the game is still putting its weapons in the hands
-			else if( rw[0] && pair_right[0] && Q_stricmp( pair_right, rw ))
+			else if( rw[0] && pair_right[0] && Q_stricmp( pair_right, rw ) && server_state != 1 )
 				return false;
 		}
 		else

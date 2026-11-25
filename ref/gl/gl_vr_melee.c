@@ -84,7 +84,7 @@ static CVAR_DEFINE_AUTO( vr_hb_bounce, "1", FCVAR_ARCHIVE, "how hard the weapon 
 static CVAR_DEFINE_AUTO( vr_hb_maxpush, "30", FCVAR_ARCHIVE, "how far a weapon can be pushed back by a wall, units" );
 static CVAR_DEFINE_AUTO( vr_hb_haptic, "1", FCVAR_ARCHIVE, "1 = the hand vibrates when the weapon hits something" );
 static CVAR_DEFINE_AUTO( vr_hb_wallspeed, "1.3", FCVAR_ARCHIVE, "m/s at which hitting the world makes a sound (0 = never)" );
-static CVAR_DEFINE_AUTO( vr_hb_swingspeed, "2.6", FCVAR_ARCHIVE, "m/s at which the tip of a melee weapon makes its swing sound" );
+static CVAR_DEFINE_AUTO( vr_hb_swingspeed, "4.5", FCVAR_ARCHIVE, "m/s at which the tip of a melee weapon makes its swing sound (a pistol whip needs 1.3 times that)" );
 static CVAR_DEFINE_AUTO( vr_hb_nodmg_models, "mobile+flare+lantern+camera+syringe+pills+cassette+flashlight+lighter+bandage", FCVAR_ARCHIVE, "items that block but never hurt (parts of the model name, separated by +). Every other gun can pistol whip" );
 static CVAR_DEFINE_AUTO( vr_hb_handpush, "0.6", FCVAR_ARCHIVE, "how much the colliders of the two hands push each other apart (0 = they do not touch each other, 1 = each moves half the overlap)" );
 static CVAR_DEFINE_AUTO( vr_hb_handmax, "5", FCVAR_ARCHIVE, "the most a hand is pushed by the other hand, units" );
@@ -121,6 +121,7 @@ typedef struct
 	double		block_until;
 	double		swing_next;
 	qboolean	swing_armed;
+	int		swing_fast;
 	double		wall_next;
 	struct { int ent; double until; } rehit[HB_REHIT_SLOTS];
 	vec3_t		samples[HB_MAX_SAMPLES];
@@ -463,6 +464,15 @@ static qboolean HB_BuildBox( int hand, hb_box_t *box )
 			cls = HB_FIST;
 			cv[0] = &vr_hb_lf_x; cv[1] = &vr_hb_lf_y; cv[2] = &vr_hb_lf_z; cv[3] = &vr_hb_lf_sx; cv[4] = &vr_hb_lf_sy; cv[5] = &vr_hb_lf_sz;
 			cv[6] = &vr_hb_lf_pitch; cv[7] = &vr_hb_lf_yaw; cv[8] = &vr_hb_lf_roll;
+
+			// no box set for the left fist: the box of the right fist (vr_weapon_v_actions.cfg), mirrored
+			if( vr_hb_lf_sx.value <= 0.01f || vr_hb_lf_sy.value <= 0.01f || vr_hb_lf_sz.value <= 0.01f )
+			{
+				char fist[48];
+
+				HB_ModelBase( VR_EmptyHandName(), fist, sizeof( fist ));
+				use_mirror = HB_MirrorBox( fist, mir );
+			}
 		}
 		else return false;
 	}
@@ -767,15 +777,19 @@ static void HB_UpdateHand( int hand, double now, double dt, const vec3_t head_de
 	{
 		float need = ( cls == HB_WHIP || cls == HB_BLOCKONLY ) ? vr_hb_swingspeed.value * 1.3f : vr_hb_swingspeed.value;
 
-		if( tip_speed < need * 0.4f )
+		if( tip_speed < need * 0.5f )
 			h->swing_armed = true;
 
-		if( cls != HB_BLOCKONLY && h->swing_armed && tip_speed > need && now >= h->swing_next && vr_hb_enable.value )
+		// a swing has to be fast for a few frames in a row: a flick of the wrist is not one
+		if( tip_speed > need ) h->swing_fast++;
+		else h->swing_fast = 0;
+
+		if( cls != HB_BLOCKONLY && h->swing_armed && h->swing_fast >= 3 && now >= h->swing_next && vr_hb_enable.value )
 		{
 			vec3_t zero = { 0, 0, 0 };
 
 			h->swing_armed = false;
-			h->swing_next = now + 0.35;
+			h->swing_next = now + 0.6;
 			HB_SendEvent( 1, hand, cls, 0, box.c, zero, tip_speed );
 		}
 	}
@@ -1115,18 +1129,27 @@ void VR_MeleeFrame( void )
 
 	HB_HandsTouch( now, dt );
 
-	// the left fist box starts from the default too, written into its cvars once so it can be tuned
+	// the left fist box starts as the mirror of the right fist's box (vr_weapon_v_actions.cfg), written into its cvars once so it
+	// can be tuned. vr_hb_lf_reset takes it from the right fist again
 	if( hb[0].cur.valid && hb[0].cur.cls == HB_FIST && !Q_strcmp( hb[0].model, "left_fist" ) && vr_hb_lf_sx.value <= 0.01f )
 	{
-		float c[3], z[3];
+		char fist[48];
+		float m[9];
 
-		HB_DefaultBox( HB_FIST, true, c, z );
-		gEngfuncs.Cvar_SetValue( "vr_hb_lf_x", c[0] );
-		gEngfuncs.Cvar_SetValue( "vr_hb_lf_y", c[1] );
-		gEngfuncs.Cvar_SetValue( "vr_hb_lf_z", c[2] );
-		gEngfuncs.Cvar_SetValue( "vr_hb_lf_sx", z[0] );
-		gEngfuncs.Cvar_SetValue( "vr_hb_lf_sy", z[1] );
-		gEngfuncs.Cvar_SetValue( "vr_hb_lf_sz", z[2] );
+		HB_ModelBase( VR_EmptyHandName(), fist, sizeof( fist ));
+
+		if( HB_MirrorBox( fist, m ))
+		{
+			gEngfuncs.Cvar_SetValue( "vr_hb_lf_x", m[0] );
+			gEngfuncs.Cvar_SetValue( "vr_hb_lf_y", -m[1] );
+			gEngfuncs.Cvar_SetValue( "vr_hb_lf_z", m[2] );
+			gEngfuncs.Cvar_SetValue( "vr_hb_lf_sx", m[3] );
+			gEngfuncs.Cvar_SetValue( "vr_hb_lf_sy", m[4] );
+			gEngfuncs.Cvar_SetValue( "vr_hb_lf_sz", m[5] );
+			gEngfuncs.Cvar_SetValue( "vr_hb_lf_pitch", m[6] );
+			gEngfuncs.Cvar_SetValue( "vr_hb_lf_yaw", -m[7] );
+			gEngfuncs.Cvar_SetValue( "vr_hb_lf_roll", -m[8] );
+		}
 	}
 
 	// the first time a weapon is held without a box of its own: fit the box to its mesh
@@ -1270,6 +1293,14 @@ static void VR_HbFit_f( void )
 	gEngfuncs.Cvar_SetValue( "vr_hb_sy", 0.0f );
 	gEngfuncs.Cvar_SetValue( "vr_hb_sz", 0.0f );
 	gEngfuncs.Con_Printf( "VR: the collider of the weapon in your right hand will be fitted to its mesh again\n" );
+}
+
+static void VR_HbLeftFistReset_f( void )
+{
+	gEngfuncs.Cvar_SetValue( "vr_hb_lf_sx", 0.0f );
+	gEngfuncs.Cvar_SetValue( "vr_hb_lf_sy", 0.0f );
+	gEngfuncs.Cvar_SetValue( "vr_hb_lf_sz", 0.0f );
+	gEngfuncs.Con_Printf( "VR: the left fist collider is taken from the right fist again (mirrored)\n" );
 }
 
 static void VR_HbInfo_f( void )
@@ -1451,5 +1482,6 @@ void VR_MeleeInitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_fist_fwd );
 
 	gEngfuncs.Cmd_AddCommand( "vr_hb_fit", VR_HbFit_f, "fit the collider of the weapon in your right hand to its mesh again (vr_weapon_save keeps it)" );
+	gEngfuncs.Cmd_AddCommand( "vr_hb_lf_reset", VR_HbLeftFistReset_f, "take the left fist collider from the right fist (vr_weapon_v_actions.cfg), mirrored" );
 	gEngfuncs.Cmd_AddCommand( "vr_hb_info", VR_HbInfo_f, "print the colliders of both hands" );
 }
