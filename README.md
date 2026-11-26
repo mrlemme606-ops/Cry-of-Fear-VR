@@ -31,6 +31,7 @@ Basic controls:
 | Turn | Right thumbstick (snap or smooth, set in the options menu) |
 | Jump | A (hold it to crouch-jump) |
 | Crouch | Physically crouch, or press the right thumbstick down |
+| Interact | Point with your right controller and press grip |
 | Recenter | Click both thumbsticks at the same time |
 | Reload | B |
 | Menu | Y |
