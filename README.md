@@ -36,6 +36,7 @@ Basic controls:
 | Menu | Y |
 | Inventory | X |
 | Hotkey Selector | Right Joystick up |
+| Special Weapon Action (Phone Call, Switch Fire Mode, ...) | Click Right Thumbstick |
 
 ## Working features
 
@@ -87,3 +88,7 @@ Basic controls:
 - **cof-enhanced** by hajdawery for a headstart into porting Cry Of Fear into the Xash3D engine
 - VR port and changes by **thumbgaming**
 - Made with the help of AI (Claude)
+
+## Discord
+
+For help, feedback, etc., join the Discord post in the Flat2VR Modding Discord server: https://discord.com/channels/747967102895390741/1573483111415681104
