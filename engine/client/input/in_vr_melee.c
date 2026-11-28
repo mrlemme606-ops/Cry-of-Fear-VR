@@ -116,17 +116,88 @@ static void IN_VRMeleeBlood( const vec3_t pos, float damage )
 	R_BloodSprite( pos, (int)vr_melee_blood_color.value, spray, drop, bound( 3.0f, damage / 10.0f, 16.0f ));
 }
 
-static void IN_VRMeleePlay( const char *const list[2], const vec3_t pos, int ent )
+static const char *IN_VRMeleePick( const char *const list[2] )
 {
 	const char *name = list[0];
 
 	if( list[1] && COM_RandomLong( 0, 1 ))
 		name = list[1];
 
+	return name;
+}
+
+static void IN_VRMeleePlayName( const char *name, const vec3_t pos, int ent )
+{
 	if( !name )
 		return;
 
 	S_StartSound( pos, ent, CHAN_BODY, S_RegisterSound( name ), 1.0f, ATTN_NORM, 96 + COM_RandomLong( 0, 8 ), 0 );
+}
+
+// A hit that comes before its own swing sound (the sound of the swing needs a moment of speed to be sure of itself) would be
+// heard first. So a hit with no swing sound just before it plays the swing sound at once, and its own sound and blood
+// follow a moment later
+typedef struct
+{
+	double		at;
+	const char	*name;
+	vec3_t		pos;
+	int		ent;
+	float		blood_damage;	// > 0 = a blood spurt too
+} vr_melee_later_t;
+
+static vr_melee_later_t vr_melee_later[8];
+static double vr_melee_last_swing[2];
+
+static void IN_VRMeleeLater( double delay, const char *name, const vec3_t pos, int ent, float blood_damage )
+{
+	int i;
+
+	for( i = 0; i < ARRAYSIZE( vr_melee_later ); i++ )
+	{
+		if( vr_melee_later[i].at <= 0.0 )
+			break;
+	}
+
+	if( i == ARRAYSIZE( vr_melee_later ))
+		i = 0;
+
+	vr_melee_later[i].at = host.realtime + delay;
+	vr_melee_later[i].name = name;
+	VectorCopy( pos, vr_melee_later[i].pos );
+	vr_melee_later[i].ent = ent;
+	vr_melee_later[i].blood_damage = blood_damage;
+}
+
+// called every frame (in_vr.c)
+void IN_VRMeleeFrame( void )
+{
+	int i;
+
+	for( i = 0; i < ARRAYSIZE( vr_melee_later ); i++ )
+	{
+		vr_melee_later_t *l = &vr_melee_later[i];
+
+		if( l->at <= 0.0 || host.realtime < l->at )
+			continue;
+
+		l->at = 0.0;
+		IN_VRMeleePlayName( l->name, l->pos, l->ent );
+
+		if( l->blood_damage > 0.0f )
+			IN_VRMeleeBlood( l->pos, l->blood_damage );
+	}
+}
+
+// the swing sound of a hit that had none yet. Returns the delay the hit's own sound should wait
+static double IN_VRMeleeSwingBefore( int hand, const vr_melee_class_t *c )
+{
+	if( !c->swing || host.realtime - vr_melee_last_swing[hand & 1] < 0.6 )
+		return 0.0;
+
+	S_StartLocalSound( c->swing, 0.9f, false );
+	vr_melee_last_swing[hand & 1] = host.realtime;
+	return 0.11;
 }
 
 static void IN_VRMeleeEvent_f( void )
@@ -167,12 +238,20 @@ static void IN_VRMeleeEvent_f( void )
 	{
 		if( c->swing )
 			S_StartLocalSound( c->swing, 0.9f, false );
+
+		vr_melee_last_swing[hand & 1] = host.realtime;
 		return;
 	}
 
 	if( type == 2 )
 	{
-		IN_VRMeleePlay( c->wall, p, 0 );
+		double delay = IN_VRMeleeSwingBefore( hand, c );
+
+		if( delay > 0.0 )
+			IN_VRMeleeLater( delay, IN_VRMeleePick( c->wall ), p, 0, 0.0f );
+		else
+			IN_VRMeleePlayName( IN_VRMeleePick( c->wall ), p, 0 );
+
 		return;
 	}
 
@@ -186,24 +265,42 @@ static void IN_VRMeleeEvent_f( void )
 	if( hand == 1 )
 		damage *= Cvar_VariableValue( "vr_hb_dmg" );
 
-	if( !vr_melee_enable_dmg.value || damage <= 0.0f )
 	{
-		IN_VRMeleePlay( c->wall, p, ent );
-		return;
+		double delay = IN_VRMeleeSwingBefore( hand, c );
+		const char *snd;
+
+		if( !vr_melee_enable_dmg.value || damage <= 0.0f )
+		{
+			snd = IN_VRMeleePick( c->wall );
+
+			if( delay > 0.0 )
+				IN_VRMeleeLater( delay, snd, p, ent, 0.0f );
+			else
+				IN_VRMeleePlayName( snd, p, ent );
+
+			return;
+		}
+
+		result = SV_VRMeleeHit( ent, p, d, damage, c->bits, vr_melee_fx.value != 0.0f );
+
+		if( vr_melee_debug_events.value )
+			Con_Printf( "VR melee: hit entity %d for %.1f damage, result %d\n", ent, damage, result );
+
+		if( result < 0 )
+			return;
+
+		snd = IN_VRMeleePick( result == 1 ? c->body : c->wall );
+
+		if( delay > 0.0 )
+			IN_VRMeleeLater( delay, snd, p, ent, result == 1 ? damage : 0.0f );
+		else
+		{
+			IN_VRMeleePlayName( snd, p, ent );
+
+			if( result == 1 )
+				IN_VRMeleeBlood( p, damage );
+		}
 	}
-
-	result = SV_VRMeleeHit( ent, p, d, damage, c->bits, vr_melee_fx.value != 0.0f );
-
-	if( vr_melee_debug_events.value )
-		Con_Printf( "VR melee: hit entity %d for %.1f damage, result %d\n", ent, damage, result );
-
-	if( result == 1 )
-	{
-		IN_VRMeleePlay( c->body, p, ent );
-		IN_VRMeleeBlood( p, damage );
-	}
-	else if( result >= 0 )
-		IN_VRMeleePlay( c->wall, p, ent );
 }
 
 void IN_VRMeleeInit( void )

@@ -154,7 +154,7 @@ static CVAR_DEFINE_AUTO( vr_sym_proj, "1", FCVAR_ARCHIVE, "1 = draw each eye wit
 static CVAR_DEFINE_AUTO( vr_flip_vfov, "1", FCVAR_ARCHIVE, "diagnostic for vr_sym_proj 0 only (it has no effect with vr_sym_proj 1): swap the up and down field of view. Try 1 if what is drawn sits a little too low or high compared to the menu pointer" );
 static CVAR_DEFINE_AUTO( vr_fov_scale, "1.0", 0, "diagnostic: scale the rendered field of view tangents (1.0 = exact)" );
 static CVAR_DEFINE_AUTO( vr_crouch_height, "0.30", FCVAR_ARCHIVE, "meters below your recentered height that count as physically crouching (you stand up again at 60% of this)" );
-static CVAR_DEFINE_AUTO( vr_ceiling, "0", FCVAR_ARCHIVE, "1 = your head cannot go above a ceiling (a low vent you crouched into): the view is pushed down" );
+static CVAR_DEFINE_AUTO( vr_ceiling, "1", FCVAR_ARCHIVE, "1 = your head cannot go above a ceiling (a low vent you crouched into): the view is pushed down" );
 static CVAR_DEFINE_AUTO( vr_ceiling_margin, "3", FCVAR_ARCHIVE, "units kept between your head and the ceiling" );
 static CVAR_DEFINE_AUTO( vr_light_clip, "1", FCVAR_ARCHIVE, "1 = the phone light does not go behind a wall when your hand is inside it" );
 static CVAR_DEFINE_AUTO( vr_grip_cut, "0", FCVAR_ARCHIVE, "the weapon's own left arm, shown while your left hand grips the weapon: units behind your left controller where it is cut off (0 = not cut). Saved per weapon with vr_weapon_save" );
@@ -201,6 +201,8 @@ static CVAR_DEFINE_AUTO( vr_sky_dome, "0", 0, "1 = draw the sky models (sky_sphe
 static CVAR_DEFINE_AUTO( vr_hide_crosshair, "1", FCVAR_ARCHIVE, "1 = switch the game's crosshair off (the laser and red cross are your aim)" );
 static CVAR_DEFINE_AUTO( vr_physical_crouch, "1", FCVAR_ARCHIVE, "1 = crouching in real life also crouches the character, so you can get through low gaps" );
 static CVAR_DEFINE_AUTO( vr_use_fbo, "0", 0, "1 = render each eye into its own buffer at SteamVR's recommended size (experimental). 0 = render in the window and copy" );
+static CVAR_DEFINE_AUTO( vr_res_auto, "1", FCVAR_ARCHIVE, "1 = the 3D picture is drawn at the resolution the headset asks for (SteamVR / Virtual Desktop), not at the size of the 1440 window: the window and the menus stay as they are. 0 = the picture is as sharp as the window (r_scene_scale as you set it)" );
+static CVAR_DEFINE_AUTO( vr_res_scale, "1.0", FCVAR_ARCHIVE, "with vr_res_auto: how sharp, as a multiple of what the headset asks for (0.8 = lighter on the graphics card, 1.2 = sharper)" );
 static CVAR_DEFINE_AUTO( vr_render_scale, "1.0", 0, "eye image size relative to what SteamVR recommends (needs a new map load or vid_restart to change)" );
 static CVAR_DEFINE_AUTO( vr_finish, "1", 0, "wait for the GPU after submitting the eye images (matches Valve's sample)" );
 static CVAR_DEFINE_AUTO( vr_ipd_scale, "1.0", 0, "diagnostic: scale the distance between the eyes (0 = mono, 1 = real)" );
@@ -278,7 +280,8 @@ static CVAR_DEFINE_AUTO( vr_cut_follow, "0", FCVAR_ARCHIVE, "1 = the cut of the 
 static CVAR_DEFINE_AUTO( vr_cut_bone, "r_wr", FCVAR_ARCHIVE, "wrist bone of the right hand's weapon model that the arm cut follows (part of the name, separated by +). vr_vm_dump_tex 2 lists the bones" );
 static CVAR_DEFINE_AUTO( vr_lh_cut_bone, "l_wr", FCVAR_ARCHIVE, "wrist bone of the universal left hand that its arm cut follows" );
 static CVAR_DEFINE_AUTO( vr_dual_muzzle, "10", FCVAR_ARCHIVE, "how far in front of the left hand the muzzle flash of a left gun is drawn (game units)" );
-static CVAR_DEFINE_AUTO( vr_dual_clip_all, "1", FCVAR_ARCHIVE, "1 = the left weapon of a dual wield is cut behind the wrist with vr_dual_cut (it is drawn by the game, so this cuts everything behind the plane)" );
+static CVAR_DEFINE_AUTO( vr_dual_clip_all, "0", FCVAR_ARCHIVE, "1 = everything of the left weapon behind the cut plane is cut, the weapon too. 0 = only the parts of its arm (the glove, the hand, the forearm) are cut, never the weapon" );
+static CVAR_DEFINE_AUTO( vr_dual_follow, "1", FCVAR_ARCHIVE, "1 = the arm cut of the left weapon sits on the wrist of its model (r_wr), so it is cut at the wrist whatever the animation does. 0 = fixed to the controller" );
 static CVAR_DEFINE_AUTO( vr_dual_clip_tex, "", FCVAR_ARCHIVE, "extra texture name fragments of the left weapon's arm that are cut off behind the wrist (separate with +). vr_vm_dump_tex 1 lists the textures" );
 static CVAR_DEFINE_AUTO( vr_dual_anim_hold, "idle+draw+holster+equip+deploy+reload+pull+hide+show+inspect+fidget+lean+sprint+walk+run", FCVAR_ARCHIVE, "animation names (part of the name, separated by +) that a gun on the left hand does NOT play" );
 static CVAR_DEFINE_AUTO( vr_dual_anim_play, "shoot+fire+shot", FCVAR_ARCHIVE, "parts of the animation names of the left weapon that are allowed to play. Everything else (idle, draw, melee, reload...) holds the first idle pose" );
@@ -502,6 +505,7 @@ void VR_InitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_debug );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_clip_tex );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_clip_all );
+	gEngfuncs.Cvar_RegisterVariable( &vr_dual_follow );
 	gEngfuncs.Cvar_RegisterVariable( &vr_cut_follow );
 	gEngfuncs.Cvar_RegisterVariable( &vr_ui_key );
 	gEngfuncs.Cvar_RegisterVariable( &vr_ui_key_gain );
@@ -603,6 +607,8 @@ void VR_InitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_nofreeze_models );
 	gEngfuncs.Cvar_RegisterVariable( &vr_physical_crouch );
 	gEngfuncs.Cvar_RegisterVariable( &vr_finish );
+	gEngfuncs.Cvar_RegisterVariable( &vr_res_auto );
+	gEngfuncs.Cvar_RegisterVariable( &vr_res_scale );
 	gEngfuncs.Cvar_RegisterVariable( &vr_render_scale );
 	gEngfuncs.Cvar_RegisterVariable( &vr_use_fbo );
 	gEngfuncs.Cvar_RegisterVariable( &vr_ipd_scale );
@@ -1682,12 +1688,17 @@ int VR_ViewModelMeshMode( int mesh, const char *texname )
 
 // everything in front of a plane just behind the hand is drawn, the arm behind it is cut off
 // where the wrist of the weapon model is this frame, and which way the arm runs (from the elbow to the wrist)
-static qboolean vr_follow_valid[2];	// 0 = the right hand's weapon, 1 = the universal left hand
-static vec3_t vr_follow_pt[2], vr_follow_dir[2];
+static qboolean vr_follow_valid[3];	// 0 = the right hand's weapon, 1 = the universal left hand, 2 = the left weapon of a dual wield
+static vec3_t vr_follow_pt[3], vr_follow_dir[3];
 
 qboolean VR_CutFollowWanted( void )
 {
 	return vr_cut_follow.value != 0.0f;
+}
+
+qboolean VR_DualCutFollowWanted( void )
+{
+	return vr_dual_follow.value != 0.0f;
 }
 
 qboolean VR_CutBoneMatch( int side, const char *bonename )
@@ -1697,7 +1708,7 @@ qboolean VR_CutBoneMatch( int side, const char *bonename )
 
 void VR_ViewModelCutFollow( int side, qboolean valid, const vec3_t wrist, const vec3_t dir )
 {
-	side = side ? 1 : 0;
+	side = bound( 0, side, 2 );
 	vr_follow_valid[side] = valid;
 
 	if( valid )
@@ -1784,9 +1795,9 @@ void VR_ViewModelClip( qboolean on )
 
 	// the right hand's weapon: the plane sits on the animated wrist and runs along the arm, so the cut stays at the
 	// same place of the arm whatever the animation does (the controller does not move with the slide of a shotgun)
-	if( !vr_dual_pass && !vr_lfist_pass && vr_follow_valid[vr_left_pass ? 1 : 0] && vr_cut_follow.value != 0.0f )
+	if( !vr_lfist_pass && vr_follow_valid[vr_dual_pass ? 2 : ( vr_left_pass ? 1 : 0 )] && ( vr_dual_pass ? vr_dual_follow.value : vr_cut_follow.value ) != 0.0f )
 	{
-		int sd = vr_left_pass ? 1 : 0;
+		int sd = vr_dual_pass ? 2 : ( vr_left_pass ? 1 : 0 );
 
 		VectorCopy( vr_follow_dir[sd], n );
 		VectorMA( vr_follow_pt[sd], -cut, n, c );
@@ -2143,23 +2154,23 @@ static void VR_CaptureTuneDefaults( void )
 // built-in weapon profiles (the defaults for every install). A file vr_weapon_<model>.cfg in the game folder still overrides them.
 static const char *vr_builtin_profiles[][2] =
 {
-	{ "v_actions", "vr_vm_grip_x -12\nvr_vm_grip_y -20\nvr_vm_grip_z -11\nvr_vm_pitch -70\nvr_vm_yaw 80\nvr_vm_roll -10\nvr_vm_flip_roll 0\nvr_vm_scale 0.19\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch 0\nvr_light_yaw 0\nvr_vm_mirror -1\n" },
+	{ "v_actions", "vr_vm_grip_x -12\nvr_vm_grip_y -20\nvr_vm_grip_z -11\nvr_vm_pitch -70\nvr_vm_yaw 80\nvr_vm_roll -10\nvr_vm_flip_roll 0\nvr_vm_scale 0.19\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch 0\nvr_light_yaw 0\nvr_vm_mirror -1\n\nvr_hb_x -2.5\nvr_hb_y 2\nvr_hb_z 0\nvr_hb_sx 5\nvr_hb_sy 5\nvr_hb_sz 5\nvr_hb_pitch 0\nvr_hb_yaw 0\nvr_hb_roll 0" },
 	{ "v_branch", "vr_vm_grip_x 13\nvr_vm_grip_y -6.5\nvr_vm_grip_z -8\nvr_vm_pitch 7\nvr_vm_yaw 0\nvr_vm_roll 70\nvr_vm_flip_roll 0\nvr_vm_scale 0.18\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0\nvr_scope_y 0\nvr_scope_z 3\nvr_scope_radius 1.2\nvr_scope_fov 10\nvr_light_pitch 0\nvr_light_yaw 0\nvr_vm_mirror -1\n" },
 	{ "v_camera", "vr_vm_grip_x 10\nvr_vm_grip_y -5\nvr_vm_grip_z -3\nvr_vm_pitch 60\nvr_vm_yaw 0\nvr_vm_roll 0\nvr_vm_flip_roll 0\nvr_aim_pitch 70\nvr_vm_scale 0.02\nvr_hand_pitch 60\nvr_vm_arm_cut 7\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch 0\nvr_light_yaw 0\nvr_vm_mirror -1\nvr_rl_grip_radius 10\nvr_rl_grip_x 12\nvr_rl_grip_y 0\nvr_rl_grip_z -4\n\nvr_anim_mask 8\n" },
 	{ "v_flare", "vr_vm_grip_x 12\nvr_vm_grip_y -4\nvr_vm_grip_z -5\nvr_vm_pitch 0\nvr_vm_yaw 10\nvr_vm_roll 60\nvr_vm_flip_roll 0\nvr_vm_scale 0.5\nvr_hand_pitch 60\nvr_vm_arm_cut 7\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch 0\nvr_light_yaw 0\nvr_vm_mirror -1\nvr_muzzle_x -4\nvr_muzzle_y 2\nvr_muzzle_z -12\n" },
 	{ "v_flashlight", "vr_vm_grip_x 8\nvr_vm_grip_y -4\nvr_vm_grip_z -5\nvr_vm_pitch 100\nvr_vm_yaw 0\nvr_vm_roll 70\nvr_vm_flip_roll 0\nvr_vm_scale 1.2\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch 100\nvr_light_yaw 0\nvr_vm_mirror -1\n" },
 	{ "v_g43", "vr_vm_grip_x 4\nvr_vm_grip_y -1.5\nvr_vm_grip_z -2\nvr_vm_pitch 0\nvr_vm_yaw 2.3\nvr_vm_roll 0\nvr_vm_flip_roll 0\nvr_vm_scale 0.45\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch 0\nvr_light_yaw 0\nvr_vm_mirror -1\nvr_rl_grip_radius 8\nvr_rl_grip_x 16\nvr_rl_grip_y 0\nvr_rl_grip_z 0\n" },
 	{ "v_glock", "vr_vm_grip_x 13\nvr_vm_grip_y -4\nvr_vm_grip_z -3\nvr_vm_pitch 0\nvr_vm_yaw 0\nvr_vm_roll 0\nvr_vm_flip_roll 0\nvr_vm_scale 0.5\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch 0\nvr_light_yaw 0\nvr_vm_mirror -1\nvr_rl_grip_radius 10\nvr_rl_grip_x 12\nvr_rl_grip_y -4\nvr_rl_grip_z -4\n" },
-	{ "v_lantern", "vr_vm_grip_x 9\nvr_vm_grip_y 3\nvr_vm_grip_z -2\nvr_vm_pitch 20\nvr_vm_yaw 10\nvr_vm_roll 20\nvr_vm_flip_roll 0\nvr_vm_scale 0.45\nvr_hand_pitch 60\nvr_vm_arm_cut 7\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch 0\nvr_light_yaw 0\nvr_vm_mirror -1\n" },
-	{ "v_m16", "vr_vm_grip_x 6\nvr_vm_grip_y -2.5\nvr_vm_grip_z -4\nvr_vm_pitch 0\nvr_vm_yaw 0\nvr_vm_roll 0\nvr_vm_flip_roll 0\nvr_vm_scale 0.45\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_rl_grip_radius 8\nvr_rl_grip_x 18\nvr_rl_grip_y 0\nvr_rl_grip_z 0\n" },
-	{ "v_mobile", "vr_vm_grip_x 8\nvr_vm_grip_y -4\nvr_vm_grip_z 2\nvr_vm_pitch 0\nvr_vm_yaw -60\nvr_vm_roll -40\nvr_vm_flip_roll 0\nvr_vm_scale 0.6\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch -10\nvr_light_yaw -80\nvr_vm_mirror -1\n" },
+	{ "v_lantern", "vr_vm_grip_x 9\nvr_vm_grip_y 3\nvr_vm_grip_z -2\nvr_vm_pitch 20\nvr_vm_yaw 10\nvr_vm_roll 20\nvr_vm_flip_roll 0\nvr_vm_scale 0.45\nvr_hand_pitch 60\nvr_vm_arm_cut 7\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch 0\nvr_light_yaw 0\nvr_vm_mirror -1\n\nvr_hb_x -3.4797\nvr_hb_y 3.72992\nvr_hb_z -6.46334\nvr_hb_sx 6\nvr_hb_sy 6\nvr_hb_sz 10\nvr_hb_pitch 55\nvr_hb_yaw 0\nvr_hb_roll 45" },
+	{ "v_m16", "vr_vm_grip_x 6\nvr_vm_grip_y -2.5\nvr_vm_grip_z -4\nvr_vm_pitch 0\nvr_vm_yaw 0\nvr_vm_roll 0\nvr_vm_flip_roll 0\nvr_vm_scale 0.45\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_rl_grip_radius 8\nvr_rl_grip_x 18\nvr_rl_grip_y 0\nvr_rl_grip_z 0\n\nvr_hb_x 7.12818\nvr_hb_y -0.127651\nvr_hb_z 1.6\nvr_hb_sx 38.8224\nvr_hb_sy 3.1589\nvr_hb_sz 3\nvr_hb_pitch 0\nvr_hb_yaw 0\nvr_hb_roll 0" },
+	{ "v_mobile", "vr_vm_grip_x 8\nvr_vm_grip_y -4\nvr_vm_grip_z 2\nvr_vm_pitch 0\nvr_vm_yaw -60\nvr_vm_roll -40\nvr_vm_flip_roll 0\nvr_vm_scale 0.6\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch -10\nvr_light_yaw -80\nvr_vm_mirror -1\n\nvr_hb_x 0\nvr_hb_y 0\nvr_hb_z -4\nvr_hb_sx 4\nvr_hb_sy 4\nvr_hb_sz 5\nvr_hb_pitch 0\nvr_hb_yaw 0\nvr_hb_roll 0" },
 	{ "v_mp5", "vr_vm_grip_x 10\nvr_vm_grip_y -4\nvr_vm_grip_z -5\nvr_vm_pitch 5\nvr_vm_yaw -4\nvr_vm_roll 0\nvr_vm_flip_roll 0\nvr_vm_scale 0.4\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 40\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch 0\nvr_light_yaw 0\nvr_vm_mirror -1\nvr_rl_grip_radius 8\nvr_rl_grip_x 20\nvr_rl_grip_y -4\nvr_rl_grip_z -4\n" },
 	{ "v_nightstick", "vr_vm_grip_x 8\nvr_vm_grip_y -3\nvr_vm_grip_z -3\nvr_vm_pitch 95\nvr_vm_yaw -150\nvr_vm_roll -90\nvr_vm_flip_roll 0\nvr_vm_scale 0.45\nvr_hand_pitch 60\nvr_vm_arm_cut 5\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch 0\nvr_light_yaw 0\nvr_vm_mirror -1\n" },
 	{ "v_p345", "vr_vm_grip_x 14\nvr_vm_grip_y -4\nvr_vm_grip_z -3\nvr_vm_pitch 0\nvr_vm_yaw 0\nvr_vm_roll 0\nvr_vm_flip_roll 0\nvr_vm_scale 0.5\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_rl_grip_radius 10\nvr_rl_grip_x 12\nvr_rl_grip_y -4\nvr_rl_grip_z -4\n" },
 	{ "v_revolver", "vr_vm_grip_x 13\nvr_vm_grip_y -4\nvr_vm_grip_z -3\nvr_vm_pitch 0\nvr_vm_yaw 0\nvr_vm_roll 0\nvr_vm_flip_roll 0\nvr_vm_scale 0.5\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch 0\nvr_light_yaw 0\nvr_vm_mirror -1\nvr_rl_grip_radius 10\nvr_rl_grip_x 12\nvr_rl_grip_y -4\nvr_rl_grip_z -4\n" },
-	{ "v_rifle", "vr_vm_grip_x 3\nvr_vm_grip_y -2\nvr_vm_grip_z -3\nvr_vm_pitch 0\nvr_vm_yaw 0\nvr_vm_roll 0\nvr_vm_flip_roll 0\nvr_vm_scale 0.3\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_rl_grip_radius 10\nvr_rl_grip_x 14\nvr_rl_grip_y -2\nvr_rl_grip_z 0\n" },
-	{ "v_shotgun", "vr_vm_grip_x 5\nvr_vm_grip_y -3\nvr_vm_grip_z -4\nvr_vm_pitch 0\nvr_vm_yaw 0\nvr_vm_roll 0\nvr_vm_flip_roll 0\nvr_vm_scale 0.5\nvr_hand_pitch 60\nvr_vm_arm_cut 7\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_rl_grip_radius 10\nvr_rl_grip_x 20\nvr_rl_grip_y -4\nvr_rl_grip_z 0\n" },
-	{ "v_sledgehammer", "vr_vm_grip_x 11\nvr_vm_grip_y -6\nvr_vm_grip_z -3\nvr_vm_pitch 40\nvr_vm_yaw 0\nvr_vm_roll -40\nvr_vm_flip_roll 0\nvr_vm_scale 0.6\nvr_hand_pitch 60\nvr_vm_arm_cut 7\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch 0\nvr_light_yaw 0\nvr_vm_mirror -1\nvr_rl_grip_radius 8\nvr_rl_grip_x 12\nvr_rl_grip_y 0\nvr_rl_grip_z -6\n" },
+	{ "v_rifle", "vr_vm_grip_x 3\nvr_vm_grip_y -2\nvr_vm_grip_z -3\nvr_vm_pitch 0\nvr_vm_yaw 0\nvr_vm_roll 0\nvr_vm_flip_roll 0\nvr_vm_scale 0.3\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_rl_grip_radius 10\nvr_rl_grip_x 14\nvr_rl_grip_y -2\nvr_rl_grip_z 0\n\nvr_hb_x 10.5231\nvr_hb_y -0.607044\nvr_hb_z 0\nvr_hb_sx 44.4722\nvr_hb_sy 2.94202\nvr_hb_sz 3\nvr_hb_pitch 0\nvr_hb_yaw 0\nvr_hb_roll 0" },
+	{ "v_shotgun", "vr_vm_grip_x 5\nvr_vm_grip_y -3\nvr_vm_grip_z -4\nvr_vm_pitch 0\nvr_vm_yaw 0\nvr_vm_roll 0\nvr_vm_flip_roll 0\nvr_vm_scale 0.5\nvr_hand_pitch 60\nvr_vm_arm_cut 7\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_rl_grip_radius 10\nvr_rl_grip_x 20\nvr_rl_grip_y -4\nvr_rl_grip_z 0\n\nvr_hb_x 6.6\nvr_hb_y -0.4\nvr_hb_z 0\nvr_hb_sx 36.9664\nvr_hb_sy 2.5\nvr_hb_sz 2\nvr_hb_pitch 0\nvr_hb_yaw 0\nvr_hb_roll 0" },
+	{ "v_sledgehammer", "vr_vm_grip_x 11\nvr_vm_grip_y -6\nvr_vm_grip_z -3\nvr_vm_pitch 40\nvr_vm_yaw 0\nvr_vm_roll -40\nvr_vm_flip_roll 0\nvr_vm_scale 0.6\nvr_hand_pitch 60\nvr_vm_arm_cut 7\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch 0\nvr_light_yaw 0\nvr_vm_mirror -1\nvr_rl_grip_radius 8\nvr_rl_grip_x 12\nvr_rl_grip_y 0\nvr_rl_grip_z -6\n\nvr_hb_x -0.700295\nvr_hb_y 2.93128\nvr_hb_z -1.80988\nvr_hb_sx 8.38541\nvr_hb_sy 4\nvr_hb_sz 14.5358\nvr_hb_pitch 0\nvr_hb_yaw 0\nvr_hb_roll 40" },
 	{ "v_switchblade", "vr_vm_grip_x 12\nvr_vm_grip_y -3\nvr_vm_grip_z -4.5\nvr_vm_pitch 0\nvr_vm_yaw 20\nvr_vm_roll 70\nvr_vm_flip_roll 0\nvr_vm_scale 0.45\nvr_hand_pitch 60\nvr_vm_arm_cut 5\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch 0\nvr_light_yaw 0\nvr_vm_mirror -1\n" },
 	{ "v_syringe", "vr_vm_grip_x 13\nvr_vm_grip_y -3\nvr_vm_grip_z -3\nvr_vm_pitch 50\nvr_vm_yaw 20\nvr_vm_roll 70\nvr_vm_flip_roll 0\nvr_vm_scale 0.7\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_vm_cut_pitch 0\nvr_vm_cut_yaw 0\nvr_light_x 6\nvr_light_y 0\nvr_light_z 0\nvr_scope_x 0.4\nvr_scope_y -0.3\nvr_scope_z 2.5\nvr_scope_radius 0.4\nvr_scope_fov 2\nvr_light_pitch 0\nvr_light_yaw 0\nvr_vm_mirror -1\n" },
 	{ "v_vp70", "vr_vm_grip_x 16\nvr_vm_grip_y -4\nvr_vm_grip_z -3\nvr_vm_pitch 0\nvr_vm_yaw 0\nvr_vm_roll 0\nvr_vm_flip_roll 0\nvr_vm_scale 0.5\nvr_hand_pitch 60\nvr_vm_arm_cut 6\nvr_rl_grip_radius 10\nvr_rl_grip_x 16\nvr_rl_grip_y -4\nvr_rl_grip_z -4\n" },
@@ -2273,7 +2284,7 @@ static void VR_DualLoadSettings( const char *model )
 	Q_strncpy( vr_dual_model, model, sizeof( vr_dual_model ));
 
 	for( i = 0; i < ARRAYSIZE( vr_dual_keys ); i++ )
-		gEngfuncs.Cvar_SetValue( vr_dual_keys[i], ( i == 6 ) ? 1.0f : ( i == 7 ? 5.0f : 0.0f ));
+		gEngfuncs.Cvar_SetValue( vr_dual_keys[i], ( i == 6 ) ? 1.0f : ( i == 7 ? 1.5f : 0.0f ));
 
 	VR_DualFileName( model, file, sizeof( file ));
 
@@ -2286,14 +2297,9 @@ static void VR_DualLoadSettings( const char *model )
 		// the arm cut of these two is set after the file, so it is the same for everyone
 		VR_ModelBaseName( model, fbase, sizeof( fbase ));
 
-		if( !Q_stricmp( fbase, "v_branch" ))
-		{
-			gEngfuncs.Cvar_SetValue( "vr_dual_cut", 3.0f );
-			gEngfuncs.Cvar_SetValue( "vr_dual_cut_pitch", -30.0f );
-		}
-		else if( !Q_stricmp( fbase, "v_switchblade" ))
-			gEngfuncs.Cvar_SetValue( "vr_dual_cut", 4.0f );
-		else gEngfuncs.Cvar_SetValue( "vr_dual_cut", gEngfuncs.pfnGetCvarFloat( "vr_dual_cut" ) - 1.0f );
+		// (the arm cut sits on the wrist of the model now, so these start small. A saved cut is kept as it is)
+		if( !Q_stricmp( fbase, "v_branch" ) || !Q_stricmp( fbase, "v_switchblade" ))
+			gEngfuncs.Cvar_SetValue( "vr_dual_cut", 1.5f );
 	}
 	else
 	{
@@ -2317,18 +2323,8 @@ static void VR_DualLoadSettings( const char *model )
 			for( k = 0; k < 7; k++ )
 				gEngfuncs.Cvar_SetValue( vr_dual_keys[k], defaults[i].v[k] );
 
-			if( !Q_stricmp( base, "v_branch" ))
-			{
-				gEngfuncs.Cvar_SetValue( "vr_dual_cut", 3.0f );
-				gEngfuncs.Cvar_SetValue( "vr_dual_cut_pitch", -30.0f );
-			}
-			else
-				gEngfuncs.Cvar_SetValue( "vr_dual_cut", 4.0f );
+			gEngfuncs.Cvar_SetValue( "vr_dual_cut", 1.5f );
 		}
-
-		// the stick reaches far behind the grip: cutting the arm at the usual place cut half of the stick as well
-		if( !Q_stricmp( base, "v_nightstick" ))
-			gEngfuncs.Cvar_SetValue( "vr_dual_cut", vr_dual_cut_nightstick.value );
 	}
 }
 
@@ -2399,8 +2395,8 @@ qboolean VR_LeftFistWanted( void )
 	if( !vr_vm_fists && !vr_vm_oneh )
 		return false;
 
-	// not while a weapon is in the left hand
-	if( VR_CofDualModel( model, sizeof( model )))
+	// not while a weapon is in the left hand. Not whenever the game says dual wield either, whatever the mod makes of it
+	if( VR_CofDualModel( model, sizeof( model )) || VR_CofDualRaw( ))
 		return false;
 
 	return true;
@@ -4065,6 +4061,67 @@ static void VR_EnsureEyeTargets( void )
 	vr.use_fbo = vr_use_fbo.value != 0.0f;
 }
 
+/*
+=================
+The sharpness of the picture. The eyes are drawn in the window's picture and copied, so they were only as sharp as the 1440
+window, whatever SteamVR / Virtual Desktop asked for. The engine can draw the 3D scene in a bigger buffer than the window
+(r_scene_scale: only the scene, the menus and the HUD stay at the window's size), and the eye copy reads that buffer. This sets
+r_scene_scale so that the part of the picture the headset really shows has the resolution SteamVR recommends.
+=================
+*/
+static void VR_AutoResolution( int eye )
+{
+	static double next_check;
+	static qboolean applied;
+	cvar_t *scene = gEngfuncs.pfnGetCvarPointer( "r_scene_scale" );
+	uint32_t rw = 0, rh = 0;
+	float fx, fy, need;
+
+	if( eye != 0 || !scene || !vr.system || vr.use_fbo )
+		return;
+
+	if( gp_host && gp_host->realtime < next_check )
+		return;
+
+	next_check = ( gp_host ? gp_host->realtime : 0.0 ) + 1.0;
+
+	if( !vr_res_auto.value )
+	{
+		// it was set here before: give the window's own sharpness back
+		if( applied )
+		{
+			gEngfuncs.Cvar_SetValue( "r_scene_scale", 1.0f );
+			applied = false;
+		}
+
+		return;
+	}
+
+	vr.system->GetRecommendedRenderTargetSize( &rw, &rh );
+
+	if( !rw || !rh || gpGlobals->width <= 0 || gpGlobals->height <= 0 )
+		return;
+
+	// how much of the window's picture the headset really shows
+	fx = bound( 0.25f, vr.eye_bounds[0][1] - vr.eye_bounds[0][0], 1.2f );
+	fy = bound( 0.25f, vr.eye_bounds[0][3] - vr.eye_bounds[0][2], 1.2f );
+
+	need = Q_max(( rw * vr_res_scale.value ) / ( fx * gpGlobals->width ), ( rh * vr_res_scale.value ) / ( fy * gpGlobals->height ));
+	need = bound( 1.0f, need, 4.0f );
+
+	if( need < 1.05f )
+		need = 1.0f;
+
+	need = floor( need * 20.0f + 0.5f ) / 20.0f;
+
+	if( fabs( scene->value - need ) > 0.02f )
+	{
+		gEngfuncs.Con_Printf( "VR: the 3D picture is drawn at %.2fx the window (headset asks for %ux%u): r_scene_scale %.2f\n", need, rw, rh, need );
+		gEngfuncs.Cvar_SetValue( "r_scene_scale", need );
+		applied = true;
+	}
+}
+
 void VR_SetupEyeView( int eye, const ref_viewpass_t *game, ref_viewpass_t *out )
 {
 	const HmdMatrix34_t *m = &vr.poses[VR_HMD_INDEX].mDeviceToAbsoluteTracking;
@@ -4154,6 +4211,8 @@ void VR_SetupEyeView( int eye, const ref_viewpass_t *game, ref_viewpass_t *out )
 
 	vr.cur_eye = eye;
 	vr.in_eye_pass = true;
+
+	VR_AutoResolution( eye );
 
 	if( vr.use_fbo )
 	{

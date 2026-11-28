@@ -38,6 +38,7 @@ qboolean VR_CofActive( void );		// client.dll found, checked and the re-arm is s
 qboolean VR_CofFrameArmed( void );	// this frame's eye passes are being re-armed
 qboolean VR_CofKeepPrepass( void );
 qboolean VR_CofDualModel( char *out, int size );
+qboolean VR_CofDualRaw( void );
 qboolean VR_CofSlotName( int slot, char *out, size_t size );
 qboolean VR_CofDrawDual( const float *origin, const float *pitch_yaw_roll );
 void VR_DrawDualWeapon( void );
@@ -195,6 +196,7 @@ qboolean VR_WeaponBasis( int hand, vec3_t grip, vec3_t f, vec3_t l, vec3_t u );
 float VR_WorldScale( void );
 qboolean VR_IsMeleeModel( const char *base );
 qboolean VR_LeftFistWanted( void );
+qboolean VR_DualCutFollowWanted( void );
 qboolean VR_ReloadLeftBusy( void );
 qboolean VR_GetLeftFistPose( vec3_t origin, vec3_t f, vec3_t l, vec3_t u, float *scale );
 qboolean VR_LeftFistBasis( vec3_t grip, vec3_t f, vec3_t l, vec3_t u );

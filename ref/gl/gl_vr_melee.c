@@ -59,19 +59,31 @@ CVAR_DEFINE_AUTO( vr_hbl_roll, "0", FCVAR_ARCHIVE, "left weapon collider: extra 
 CVAR_DEFINE_AUTO( vr_hb_melee, "-1", FCVAR_ARCHIVE, "this weapon: -1 = by its kind, 0 = only collides (never hurts), 1 = hurts what it hits. Saved per weapon" );
 
 // the left fist (a free left hand that can punch): one box for it, not per weapon (saved in your config)
-static CVAR_DEFINE_AUTO( vr_hb_lf_x, "0", FCVAR_ARCHIVE, "left fist collider: centre, units forward of the hand (the fist's own axes)" );
-static CVAR_DEFINE_AUTO( vr_hb_lf_y, "0", FCVAR_ARCHIVE, "left fist collider: centre, units to the left" );
+static CVAR_DEFINE_AUTO( vr_hb_lf_x, "-2.5", FCVAR_ARCHIVE, "left fist collider: centre, units forward of the hand (the fist's own axes)" );
+static CVAR_DEFINE_AUTO( vr_hb_lf_y, "-2", FCVAR_ARCHIVE, "left fist collider: centre, units to the left" );
 static CVAR_DEFINE_AUTO( vr_hb_lf_z, "0", FCVAR_ARCHIVE, "left fist collider: centre, units up" );
-static CVAR_DEFINE_AUTO( vr_hb_lf_sx, "0", FCVAR_ARCHIVE, "left fist collider: size along the fist (units). 0 = the default (vr_hb_fist_size)" );
-static CVAR_DEFINE_AUTO( vr_hb_lf_sy, "0", FCVAR_ARCHIVE, "left fist collider: size sideways" );
-static CVAR_DEFINE_AUTO( vr_hb_lf_sz, "0", FCVAR_ARCHIVE, "left fist collider: size up/down" );
+static CVAR_DEFINE_AUTO( vr_hb_lf_sx, "5", FCVAR_ARCHIVE, "left fist collider: size along the fist (units)" );
+static CVAR_DEFINE_AUTO( vr_hb_lf_sy, "5", FCVAR_ARCHIVE, "left fist collider: size sideways" );
+static CVAR_DEFINE_AUTO( vr_hb_lf_sz, "5", FCVAR_ARCHIVE, "left fist collider: size up/down" );
 static CVAR_DEFINE_AUTO( vr_hb_lf_pitch, "0", FCVAR_ARCHIVE, "left fist collider: extra pitch degrees" );
 static CVAR_DEFINE_AUTO( vr_hb_lf_yaw, "0", FCVAR_ARCHIVE, "left fist collider: extra yaw degrees" );
 static CVAR_DEFINE_AUTO( vr_hb_lf_roll, "0", FCVAR_ARCHIVE, "left fist collider: extra roll degrees" );
 
+// the universal left hand at rest (nothing in it, and it cannot punch): it blocks, and the two hands and what they hold push each other
+static CVAR_DEFINE_AUTO( vr_hb_lh_x, "0", FCVAR_ARCHIVE, "left hand collider: moved forward from the box it starts with (units); once a size is set, the centre" );
+static CVAR_DEFINE_AUTO( vr_hb_lh_y, "0", FCVAR_ARCHIVE, "left hand collider: to the left" );
+static CVAR_DEFINE_AUTO( vr_hb_lh_z, "0", FCVAR_ARCHIVE, "left hand collider: up" );
+static CVAR_DEFINE_AUTO( vr_hb_lh_sx, "0", FCVAR_ARCHIVE, "left hand collider: size along the hand (units). 0 = the default box (9 x 5 x 5)" );
+static CVAR_DEFINE_AUTO( vr_hb_lh_sy, "0", FCVAR_ARCHIVE, "left hand collider: size sideways" );
+static CVAR_DEFINE_AUTO( vr_hb_lh_sz, "0", FCVAR_ARCHIVE, "left hand collider: size up/down" );
+static CVAR_DEFINE_AUTO( vr_hb_lh_pitch, "0", FCVAR_ARCHIVE, "left hand collider: pitch (degrees)" );
+static CVAR_DEFINE_AUTO( vr_hb_lh_yaw, "0", FCVAR_ARCHIVE, "left hand collider: yaw (degrees)" );
+static CVAR_DEFINE_AUTO( vr_hb_lh_roll, "0", FCVAR_ARCHIVE, "left hand collider: roll (degrees)" );
+
 // -------- cvars: how the system behaves --------
 static CVAR_DEFINE_AUTO( vr_hb_enable, "1", FCVAR_ARCHIVE, "1 = weapon colliders hit and block. 0 = melee off" );
 static CVAR_DEFINE_AUTO( vr_hb_debug, "0", 0, "1 = draw the weapon colliders (cyan = free, yellow = blocked by the world, red = just hit). 2 = also the sample points and the pushed-back box" );
+static CVAR_DEFINE_AUTO( vr_hb_visual, "1", FCVAR_ARCHIVE, "1 = weapons and hands are drawn pushed back by walls and by each other, and bounce. 0 = they are always drawn where your controllers are (the colliders still hit)" );
 static CVAR_DEFINE_AUTO( vr_hb_collide, "1", FCVAR_ARCHIVE, "1 = weapons cannot go through walls, doors, planks and monsters (only what you see is pushed back)" );
 static CVAR_DEFINE_AUTO( vr_hb_bbox, "1", FCVAR_ARCHIVE, "1 = monsters are hit by their bounding box (forgiving). 0 = by their exact hitboxes" );
 static CVAR_DEFINE_AUTO( vr_hb_minspeed, "1.6", FCVAR_ARCHIVE, "m/s the box has to move at to hurt something with a melee weapon or fists. Slower touches only bounce" );
@@ -84,7 +96,7 @@ static CVAR_DEFINE_AUTO( vr_hb_bounce, "1", FCVAR_ARCHIVE, "how hard the weapon 
 static CVAR_DEFINE_AUTO( vr_hb_maxpush, "30", FCVAR_ARCHIVE, "how far a weapon can be pushed back by a wall, units" );
 static CVAR_DEFINE_AUTO( vr_hb_haptic, "1", FCVAR_ARCHIVE, "1 = the hand vibrates when the weapon hits something" );
 static CVAR_DEFINE_AUTO( vr_hb_wallspeed, "1.3", FCVAR_ARCHIVE, "m/s at which hitting the world makes a sound (0 = never)" );
-static CVAR_DEFINE_AUTO( vr_hb_swingspeed, "4.5", FCVAR_ARCHIVE, "m/s at which the tip of a melee weapon makes its swing sound (a pistol whip needs 1.3 times that)" );
+static CVAR_DEFINE_AUTO( vr_hb_swingspeed, "15", FCVAR_ARCHIVE, "m/s at which the tip of a melee weapon makes its swing sound (a pistol whip needs 1.3 times that)" );
 static CVAR_DEFINE_AUTO( vr_hb_nodmg_models, "mobile+flare+lantern+camera+syringe+pills+cassette+flashlight+lighter+bandage", FCVAR_ARCHIVE, "items that block but never hurt (parts of the model name, separated by +). Every other gun can pistol whip" );
 static CVAR_DEFINE_AUTO( vr_hb_handpush, "0.6", FCVAR_ARCHIVE, "how much the colliders of the two hands push each other apart (0 = they do not touch each other, 1 = each moves half the overlap)" );
 static CVAR_DEFINE_AUTO( vr_hb_handmax, "5", FCVAR_ARCHIVE, "the most a hand is pushed by the other hand, units" );
@@ -117,6 +129,8 @@ typedef struct
 	vec3_t		push_vis;	// the same, smoothed
 	vec3_t		bounce, bounce_vel;
 	vec3_t		hpush;		// pushed by the other hand (smoothed)
+	vec3_t		free_grip;	// the last place the hand was not inside anything
+	qboolean	free_ok;
 	double		flash_until;
 	double		block_until;
 	double		swing_next;
@@ -271,7 +285,7 @@ static void HB_DefaultBox( int cls, qboolean left, float *center, float *size )
 	}
 }
 
-// ---- the box of a weapon in the left hand of a dual wield: the box of the same weapon in the right hand, mirrored ----
+// ---- the box of a weapon in the left hand of a dual wield: the box of the same weapon in the right hand ----
 // The last boxes this session of the weapons that were in the right hand (fitted or tuned), and the saved ones (vr_weapon_save)
 #define HB_CACHE	16
 
@@ -343,8 +357,8 @@ static qboolean HB_MirrorBox( const char *base, float *out )
 	double now = gp_host ? gp_host->realtime : 0.0;
 	int i;
 
-	// the switchblade and the branch are held differently in the left hand: their boxes are set by hand (vr_hbl_*)
-	if( HB_NameHas( base, "switchblade" ) || HB_NameHas( base, "knife" ) || HB_NameHas( base, "branch" ))
+	// the switchblade, the branch and the nightstick are held differently in the left hand: their boxes are set by hand (vr_hbl_*)
+	if( HB_NameHas( base, "switchblade" ) || HB_NameHas( base, "knife" ) || HB_NameHas( base, "branch" ) || HB_NameHas( base, "nightstick" ))
 		return false;
 
 	for( i = 0; i < hb_cache_n; i++ )
@@ -401,10 +415,10 @@ static qboolean HB_BuildBox( int hand, hb_box_t *box )
 {
 	char base[48];
 	vec3_t grip, f, l, u;
-	float center[3], size[3], rot[3];
+	float center[3], size[3], rot[3], bc[3], bs[3], br[3];
 	const convar_t *cv[9];
-	float mir[9];
-	qboolean use_mirror = false;
+	float same[9];
+	qboolean have_same = false, any_size;
 	int cls, i;
 
 	box->valid = false;
@@ -444,9 +458,9 @@ static qboolean HB_BuildBox( int hand, hb_box_t *box )
 			cv[0] = &vr_hbl_x; cv[1] = &vr_hbl_y; cv[2] = &vr_hbl_z; cv[3] = &vr_hbl_sx; cv[4] = &vr_hbl_sy; cv[5] = &vr_hbl_sz;
 			cv[6] = &vr_hbl_pitch; cv[7] = &vr_hbl_yaw; cv[8] = &vr_hbl_roll;
 
-			// no box of its own set for the left hand: the box of the same weapon in the right hand, mirrored
-			if( vr_hbl_sx.value <= 0.01f || vr_hbl_sy.value <= 0.01f || vr_hbl_sz.value <= 0.01f )
-				use_mirror = HB_MirrorBox( base, mir );
+			// the same weapon in the left hand starts with the box it has in the right hand (the same numbers: the model is the
+			// same, only its hold is mirrored). The switchblade and the branch are held differently: those are set by hand
+			have_same = HB_MirrorBox( base, same );
 		}
 		else if( HB_Cvar( "vr_in_fists" ) > 0.5f || HB_Cvar( "vr_in_oneh" ) > 0.5f )
 		{
@@ -464,17 +478,20 @@ static qboolean HB_BuildBox( int hand, hb_box_t *box )
 			cls = HB_FIST;
 			cv[0] = &vr_hb_lf_x; cv[1] = &vr_hb_lf_y; cv[2] = &vr_hb_lf_z; cv[3] = &vr_hb_lf_sx; cv[4] = &vr_hb_lf_sy; cv[5] = &vr_hb_lf_sz;
 			cv[6] = &vr_hb_lf_pitch; cv[7] = &vr_hb_lf_yaw; cv[8] = &vr_hb_lf_roll;
-
-			// no box set for the left fist: the box of the right fist (vr_weapon_v_actions.cfg), mirrored
-			if( vr_hb_lf_sx.value <= 0.01f || vr_hb_lf_sy.value <= 0.01f || vr_hb_lf_sz.value <= 0.01f )
-			{
-				char fist[48];
-
-				HB_ModelBase( VR_EmptyHandName(), fist, sizeof( fist ));
-				use_mirror = HB_MirrorBox( fist, mir );
-			}
 		}
-		else return false;
+		else
+		{
+			// the universal left hand at rest: it blocks and collides with what is held, and never hurts
+			vec3_t o, a;
+
+			if( !VR_GetLeftHandPose( o, a ) || !VR_GetHandBasis( 0, grip, f, l, u ))
+				return false;
+
+			Q_strncpy( base, "left_hand", sizeof( base ));
+			cls = HB_BLOCKONLY;
+			cv[0] = &vr_hb_lh_x; cv[1] = &vr_hb_lh_y; cv[2] = &vr_hb_lh_z; cv[3] = &vr_hb_lh_sx; cv[4] = &vr_hb_lh_sy; cv[5] = &vr_hb_lh_sz;
+			cv[6] = &vr_hb_lh_pitch; cv[7] = &vr_hb_lh_yaw; cv[8] = &vr_hb_lh_roll;
+		}
 	}
 
 	if( cls == HB_NONE )
@@ -489,26 +506,43 @@ static qboolean HB_BuildBox( int hand, hb_box_t *box )
 			cls = HB_WHIP;
 	}
 
-	if( cv[0] && cv[3]->value > 0.01f && cv[4]->value > 0.01f && cv[5]->value > 0.01f )
+	// the box to start from: the right hand's box of the same weapon, or a default for that kind of thing
+	if( have_same )
 	{
-		for( i = 0; i < 3; i++ )
-		{
-			center[i] = cv[i]->value;
-			size[i] = cv[3 + i]->value;
-			rot[i] = cv[6 + i]->value;
-		}
+		VectorSet( bc, same[0], same[1], same[2] );
+		VectorSet( bs, same[3], same[4], same[5] );
+		VectorSet( br, same[6], same[7], same[8] );
 	}
-	else if( use_mirror )
+	else if( !Q_strcmp( base, "left_hand" ))
 	{
-		// reflected across the middle of the body: sideways flips, so do yaw and roll
-		VectorSet( center, mir[0], -mir[1], mir[2] );
-		VectorSet( size, mir[3], mir[4], mir[5] );
-		VectorSet( rot, mir[6], -mir[7], -mir[8] );
+		VectorSet( bc, 2.0f, 0.0f, 0.0f );
+		VectorSet( bs, 9.0f, 5.0f, 5.0f );
+		VectorClear( br );
 	}
 	else
 	{
-		HB_DefaultBox( cls, hand == 0, center, size );
-		VectorClear( rot );
+		HB_DefaultBox( cls, hand == 0, bc, bs );
+		VectorClear( br );
+	}
+
+	// What the cvars say. Once any size is set, they are the box (a size left at 0 keeps the one it starts from). With no size
+	// set, the position and the rotation are moved from the box it starts from, so changing them always does something
+	any_size = cv[3]->value > 0.01f || cv[4]->value > 0.01f || cv[5]->value > 0.01f;
+
+	for( i = 0; i < 3; i++ )
+	{
+		if( any_size )
+		{
+			center[i] = cv[i]->value;
+			size[i] = cv[3 + i]->value > 0.01f ? cv[3 + i]->value : bs[i];
+			rot[i] = cv[6 + i]->value;
+		}
+		else
+		{
+			center[i] = bc[i] + cv[i]->value;
+			size[i] = bs[i];
+			rot[i] = br[i] + cv[6 + i]->value;
+		}
 	}
 
 	// the centre is measured along the weapon's axes; the extra rotation of the box turns the box around its own centre
@@ -694,6 +728,7 @@ static void HB_UpdateHand( int hand, double now, double dt, const vec3_t head_de
 	{
 		h->cur.valid = false;
 		h->prev_ok = false;
+		h->free_ok = false;
 		VectorClear( h->push );
 		VectorClear( h->push_vis );
 		return;
@@ -856,13 +891,49 @@ static void HB_UpdateHand( int hand, double now, double dt, const vec3_t head_de
 		}
 	}
 
-	// ----- blocking: nothing goes through walls. Trace from the hand to every sample, push back what is inside something -----
+	// ----- blocking: nothing goes through walls, however far the real hand goes in -----
+	// 1. The hand itself: it is followed from the last place it was free. Where that path runs into something, the drawn hand
+	//    stops: it stays on the surface however deep your real hand is. 2. Every point of the weapon is traced from that hand,
+	//    and what is inside something is pushed back too
 	VectorClear( h->push );
 
 	if( vr_hb_collide.value && vr_hb_enable.value )
 	{
-		vec3_t S = { 0, 0, 0 };
+		vec3_t S = { 0, 0, 0 }, gs = { 0, 0, 0 }, eff;
 		int iter;
+		float sl, mp = bound( 4.0f, vr_hb_maxpush.value, 80.0f );
+
+		if( h->free_ok && VectorDistance( h->free_grip, h->grip ) < 90.0f )
+		{
+			pmtrace_t tr = gEngfuncs.CL_TraceLine( h->free_grip, h->grip, HB_TraceFlags( ));
+
+			if( tr.startsolid || tr.allsolid )
+			{
+				// the last free place is itself inside something now (a door closed on it): free again once the real hand is
+				pmtrace_t here = gEngfuncs.CL_TraceLine( h->grip, h->grip, HB_TraceFlags( ));
+
+				if( !here.startsolid && !here.allsolid )
+					VectorCopy( h->grip, h->free_grip );
+				else
+					VectorSubtract( h->free_grip, h->grip, gs );
+			}
+			else if( tr.fraction < 1.0f )
+			{
+				vec3_t stop;
+
+				// stop a hair in front of the surface
+				VectorMA( tr.endpos, 0.5f, tr.plane.normal, stop );
+				VectorSubtract( stop, h->grip, gs );
+			}
+			else VectorCopy( h->grip, h->free_grip );
+		}
+		else
+		{
+			VectorCopy( h->grip, h->free_grip );
+			h->free_ok = true;
+		}
+
+		VectorAdd( h->grip, gs, eff );	// where the drawn hand is
 
 		for( iter = 0; iter < 3; iter++ )
 		{
@@ -875,8 +946,9 @@ static void HB_UpdateHand( int hand, double now, double dt, const vec3_t head_de
 				pmtrace_t tr;
 				float len;
 
-				VectorAdd( wp[i], S, p );
-				tr = gEngfuncs.CL_TraceLine( h->grip, p, HB_TraceFlags( ));
+				VectorAdd( wp[i], gs, p );
+				VectorAdd( p, S, p );
+				tr = gEngfuncs.CL_TraceLine( eff, p, HB_TraceFlags( ));
 
 				if( tr.startsolid || tr.allsolid || tr.fraction >= 1.0f )
 					continue;
@@ -897,18 +969,17 @@ static void HB_UpdateHand( int hand, double now, double dt, const vec3_t head_de
 			VectorSubtract( S, worst_d, S );
 		}
 
-		{
-			float sl = VectorLength( S ), mp = bound( 4.0f, vr_hb_maxpush.value, 80.0f );
+		sl = VectorLength( S );
 
-			if( sl > mp )
-				VectorScale( S, mp / sl, S );
-		}
+		if( sl > mp )
+			VectorScale( S, mp / sl, S );
 
-		VectorCopy( S, h->push );
+		VectorAdd( gs, S, h->push );
 
-		if( VectorLength( S ) > 0.3f )
+		if( VectorLength( h->push ) > 0.3f )
 			h->block_until = Q_max( h->block_until, now + 0.05 );
 	}
+	else h->free_ok = false;
 
 	// ----- the visual push: instant when it goes in, soft when it goes out. And the bounce spring -----
 	{
@@ -1129,28 +1200,6 @@ void VR_MeleeFrame( void )
 
 	HB_HandsTouch( now, dt );
 
-	// the left fist box starts as the mirror of the right fist's box (vr_weapon_v_actions.cfg), written into its cvars once so it
-	// can be tuned. vr_hb_lf_reset takes it from the right fist again
-	if( hb[0].cur.valid && hb[0].cur.cls == HB_FIST && !Q_strcmp( hb[0].model, "left_fist" ) && vr_hb_lf_sx.value <= 0.01f )
-	{
-		char fist[48];
-		float m[9];
-
-		HB_ModelBase( VR_EmptyHandName(), fist, sizeof( fist ));
-
-		if( HB_MirrorBox( fist, m ))
-		{
-			gEngfuncs.Cvar_SetValue( "vr_hb_lf_x", m[0] );
-			gEngfuncs.Cvar_SetValue( "vr_hb_lf_y", -m[1] );
-			gEngfuncs.Cvar_SetValue( "vr_hb_lf_z", m[2] );
-			gEngfuncs.Cvar_SetValue( "vr_hb_lf_sx", m[3] );
-			gEngfuncs.Cvar_SetValue( "vr_hb_lf_sy", m[4] );
-			gEngfuncs.Cvar_SetValue( "vr_hb_lf_sz", m[5] );
-			gEngfuncs.Cvar_SetValue( "vr_hb_lf_pitch", m[6] );
-			gEngfuncs.Cvar_SetValue( "vr_hb_lf_yaw", -m[7] );
-			gEngfuncs.Cvar_SetValue( "vr_hb_lf_roll", -m[8] );
-		}
-	}
 
 	// the first time a weapon is held without a box of its own: fit the box to its mesh
 	if( hb[1].cur.valid )
@@ -1192,7 +1241,7 @@ void VR_MeleePushback( int hand, vec3_t out )
 {
 	hb_hand_t *h = &hb[hand & 1];
 
-	if( !vr_hb_enable.value || !h->cur.valid )
+	if( !vr_hb_enable.value || !vr_hb_visual.value || !h->cur.valid )
 	{
 		VectorClear( out );
 		return;
@@ -1297,10 +1346,16 @@ static void VR_HbFit_f( void )
 
 static void VR_HbLeftFistReset_f( void )
 {
-	gEngfuncs.Cvar_SetValue( "vr_hb_lf_sx", 0.0f );
-	gEngfuncs.Cvar_SetValue( "vr_hb_lf_sy", 0.0f );
-	gEngfuncs.Cvar_SetValue( "vr_hb_lf_sz", 0.0f );
-	gEngfuncs.Con_Printf( "VR: the left fist collider is taken from the right fist again (mirrored)\n" );
+	gEngfuncs.Cvar_SetValue( "vr_hb_lf_x", -2.5f );
+	gEngfuncs.Cvar_SetValue( "vr_hb_lf_y", -2.0f );
+	gEngfuncs.Cvar_SetValue( "vr_hb_lf_z", 0.0f );
+	gEngfuncs.Cvar_SetValue( "vr_hb_lf_sx", 5.0f );
+	gEngfuncs.Cvar_SetValue( "vr_hb_lf_sy", 5.0f );
+	gEngfuncs.Cvar_SetValue( "vr_hb_lf_sz", 5.0f );
+	gEngfuncs.Cvar_SetValue( "vr_hb_lf_pitch", 0.0f );
+	gEngfuncs.Cvar_SetValue( "vr_hb_lf_yaw", 0.0f );
+	gEngfuncs.Cvar_SetValue( "vr_hb_lf_roll", 0.0f );
+	gEngfuncs.Con_Printf( "VR: the left fist collider is back at its defaults\n" );
 }
 
 static void VR_HbInfo_f( void )
@@ -1441,6 +1496,15 @@ void VR_MeleeInitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_roll );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_dmg );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_melee );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lh_x );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lh_y );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lh_z );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lh_sx );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lh_sy );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lh_sz );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lh_pitch );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lh_yaw );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lh_roll );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lf_x );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lf_y );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_lf_z );
@@ -1462,6 +1526,7 @@ void VR_MeleeInitCvars( void )
 
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_enable );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_debug );
+	gEngfuncs.Cvar_RegisterVariable( &vr_hb_visual );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_collide );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_bbox );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_minspeed );
@@ -1482,6 +1547,6 @@ void VR_MeleeInitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_hb_fist_fwd );
 
 	gEngfuncs.Cmd_AddCommand( "vr_hb_fit", VR_HbFit_f, "fit the collider of the weapon in your right hand to its mesh again (vr_weapon_save keeps it)" );
-	gEngfuncs.Cmd_AddCommand( "vr_hb_lf_reset", VR_HbLeftFistReset_f, "take the left fist collider from the right fist (vr_weapon_v_actions.cfg), mirrored" );
+	gEngfuncs.Cmd_AddCommand( "vr_hb_lf_reset", VR_HbLeftFistReset_f, "put the left fist collider back at its defaults" );
 	gEngfuncs.Cmd_AddCommand( "vr_hb_info", VR_HbInfo_f, "print the colliders of both hands" );
 }

@@ -183,6 +183,7 @@ static int vr_qs_sel;
 static vec3_t vr_qs_start;
 extern void IN_VRMeleeInit( void );
 extern int SV_VRDualState( void );
+extern void IN_VRMeleeFrame( void );
 static int vr_cur_weapon = -1;
 static double vr_swing_hold, vr_lswing_hold;
 static double vr_swing_pending_until, vr_lswing_pending_until;
@@ -1762,6 +1763,8 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 	if( in_game )
 		IN_VRMoveTraceFrame();
 
+	IN_VRMeleeFrame();
+
 	// what the game itself says about a dual wield (the renderer trusts this over the messages the client has heard)
 	Cvar_DirectSetValue( &vr_in_dual_srv, in_game ? (float)SV_VRDualState() : -1.0f );
 
@@ -1988,7 +1991,7 @@ void IN_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 		float push = sqrt( fwd * fwd + side * side );
 		float speed = VectorLength( clgame.pmove->velocity );
 
-		if( push > 0.6f && speed < 15.0f && !on_ladder && !on_boat )
+		if( push > 0.6f && speed < 15.0f && !on_ladder && !on_boat && !FBitSet( clgame.pmove->flags, FL_FROZEN ))
 		{
 			if( stuck_since == 0.0 )
 				stuck_since = host.realtime;

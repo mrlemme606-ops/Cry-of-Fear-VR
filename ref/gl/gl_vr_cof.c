@@ -739,7 +739,7 @@ qboolean VR_CofHideDeathArm( void )
 }
 
 // the weapon in the left hand of a dual wield: the game draws it itself, in its "secondary view" (see COF_SECONDARY)
-qboolean VR_CofDualModel( char *out, int size )
+static qboolean COF_DualModelInner( char *out, int size )
 {
 #if defined( _WIN32 )
 	COF_Resolve();
@@ -816,6 +816,48 @@ qboolean VR_CofDualModel( char *out, int size )
 #else
 	return false;
 #endif
+}
+
+// the game says it is a dual wield (whatever the mod makes of it)
+qboolean VR_CofDualRaw( void )
+{
+#if defined( _WIN32 )
+	return cof.ok && cof.dual_ok && *cof.dualmode == 3;
+#else
+	return false;
+#endif
+}
+
+static qboolean cof_dual_dump;
+
+static void VR_DualStatus_f( void )
+{
+	cof_dual_dump = true;
+}
+
+qboolean VR_CofDualModel( char *out, int size )
+{
+	qboolean result = COF_DualModelInner( out, size );
+
+	if( cof_dual_dump )
+	{
+		cvar_t *srv = gEngfuncs.pfnGetCvarPointer( "vr_in_dual_srv" );
+		const char *rw = VR_CurrentWeaponModel();
+
+		cof_dual_dump = false;
+#if defined( _WIN32 )
+		gEngfuncs.Con_Printf( "VR dual status: the game says mode %d, left weapon '%s'; the game itself (server) says dual wield: %s; right hand: '%s'\n",
+			cof.ok && cof.dual_ok ? *cof.dualmode : -1, cof.ok ? cof.dualname : "", !srv ? "not known" : ( srv->value > 0.5f ? "yes" : ( srv->value > -0.5f ? "no" : "not known" )),
+			rw ? rw : "" );
+#else
+		gEngfuncs.Con_Printf( "VR dual status: only on Windows (right hand: '%s', the game itself says: %s)\n", rw ? rw : "", !srv ? "not known" : ( srv->value > 0.5f ? "yes" : "no" ));
+#endif
+		gEngfuncs.Con_Printf( "  the right weapon is held with two hands: %s; vr_dual %g, vr_dual_own %g, vr_dual_builtin %g\n",
+			VR_ReloadWeaponTwoHanded() ? "yes" : "no", gEngfuncs.pfnGetCvarFloat( "vr_dual" ), gEngfuncs.pfnGetCvarFloat( "vr_dual_own" ), gEngfuncs.pfnGetCvarFloat( "vr_dual_builtin" ));
+		gEngfuncs.Con_Printf( "  VR counts it as a dual wield: %s%s%s\n", result ? "YES, left weapon " : "no", result ? out : "", "" );
+	}
+
+	return result;
 }
 
 // what is in hotkey slot 1..3 (the weapon's name without the "weapon_"), empty when nothing
@@ -1142,6 +1184,7 @@ void VR_CofInitCvars( void )
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_idle_list );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_grace );
 	gEngfuncs.Cvar_RegisterVariable( &vr_dual_dbg );
+	gEngfuncs.Cmd_AddCommand( "vr_dual_status", VR_DualStatus_f, "print what the game and the mod think about the dual wield (use it while the left weapon is wrong)" );
 	gEngfuncs.Cvar_RegisterVariable( &vr_light_white );
 	gEngfuncs.Cvar_RegisterVariable( &vr_light_life );
 	gEngfuncs.Cvar_RegisterVariable( &vr_hide_death_arm );

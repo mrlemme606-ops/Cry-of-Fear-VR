@@ -2184,13 +2184,15 @@ static void R_StudioDrawPoints( void )
 			bonehide[b] = VR_ViewModelBoneHidden( vrbones[b].name );
 
 		// the arm cut follows the animated wrist of the right hand's weapon
-		if( !R_StudioIsDualEntity( ) && VR_CutFollowWanted( ) && !r_vr_lfist )
+		if( !r_vr_lfist && ( R_StudioIsDualEntity( ) ? VR_DualCutFollowWanted( ) : VR_CutFollowWanted( )))
 		{
-			int wrist = -1, side = ( RI.currententity == &vr_lhand_ent ) ? 1 : 0;
+			// side 2 is the left weapon of a dual wield: its arm is a right arm, so the right wrist bone is the one
+			qboolean dualent = R_StudioIsDualEntity( );
+			int wrist = -1, side = dualent ? 2 : (( RI.currententity == &vr_lhand_ent ) ? 1 : 0);
 
 			for( int b = 0; b < nb; b++ )
 			{
-				if( VR_CutBoneMatch( side, vrbones[b].name ))
+				if( VR_CutBoneMatch( side == 1 ? 1 : 0, vrbones[b].name ))
 				{
 					wrist = b;
 					break;
